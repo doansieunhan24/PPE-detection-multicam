@@ -1,34 +1,53 @@
-# PPE detector training on SH17 person crops (CLAUDE.md D7, §9).
+# PPE detector training on person crops (CLAUDE.md D7, §9).
 
 seed: 0
 
-sh17:
-  root: data/external/sh17            # extracted Kaggle archive
-  # SH17 class ids (from sh17.yaml in the official repo)
-  names: {0: person, 1: ear, 2: ear-mufs, 3: face, 4: face-guard, 5: face-mask, 6: foot,
-          7: tool, 8: glasses, 9: gloves, 10: helmet, 11: hands, 12: head, 13: medical-suit,
-          14: shoes, 15: safety-suit, 16: safety-vest}
-  person_class: person
-
-# SH17 name -> our class name; order defines our class ids.
+# Our detector classes; order defines class ids.
 # NOTE: SH17 "shoes" does not distinguish safety shoes from normal shoes (Limitations §17).
-target_classes:
-  helmet: helmet
-  safety-vest: vest
-  shoes: shoes
-  head: head          # negative/context for helmet
-  foot: foot          # negative/context for shoes
+classes: [helmet, vest, shoes, head, foot]   # head/foot = negatives/context for helmet/shoes
+
+datasets:
+  sh17:                                 # CC BY-NC-SA 4.0 — see docs/experiments.md
+    root: data/external/sh17            # extracted Kaggle archive
+    images: images
+    labels: labels
+    # SH17 class ids (from sh17.yaml in the official repo)
+    names: {0: person, 1: ear, 2: ear-mufs, 3: face, 4: face-guard, 5: face-mask, 6: foot,
+            7: tool, 8: glasses, 9: gloves, 10: helmet, 11: hands, 12: head, 13: medical-suit,
+            14: shoes, 15: safety-suit, 16: safety-vest}
+    person_class: person
+    map: {helmet: helmet, safety-vest: vest, shoes: shoes, head: head, foot: foot}
+    splits: {train: train_files.txt, test: val_files.txt}   # val carved from train
+    out_crops: data/processed/sh17_person_crops
+    out_full: data/processed/sh17_full_frame
+
+  chv:                                  # Wang et al. 2021 (Sensors); "free use", cite repo
+    root: data/external/CHV_dataset
+    images: images
+    labels: annotations
+    names: {0: person, 1: vest, 2: blue helmet, 3: red helmet, 4: white helmet, 5: yellow helmet}
+    person_class: person
+    map: {vest: vest, blue helmet: helmet, red helmet: helmet, white helmet: helmet,
+          yellow helmet: helmet}
+    splits: {train: data split/train.txt, val: data split/valid.txt, test: data split/test.txt}
+    out_crops: data/processed/chv_person_crops
+    out_full: data/processed/chv_full_frame
+    missing_classes: [shoes, head, foot]   # not annotated in CHV → pseudo-labelled
 
 crops:
-  out: data/processed/sh17_person_crops
   min_keep_ratio: 0.6     # keep a PPE box if (inter with crop)/(box area) >= this
-  val_ratio: 0.1          # carved from SH17 train, split by source image
+  val_ratio: 0.1          # carved from train when a dataset has no val list, split by image
   jpeg_quality: 95
+  max_side_px: 640        # downscale large crops (SH17 photos are high-res); labels are normalised
   # crop_pad / min_crop_w_px / min_crop_h_px are read from configs/perception.yaml (ppe:)
   # so training crops match the inference crops.
 
 full_frame:               # baseline for experiment §10.3-5 (full-frame vs crop)
-  out: data/processed/sh17_full_frame
+  max_side_px: 1280
+
+pseudo_label:             # fill classes a dataset does not annotate (CHV: shoes/head/foot)
+  conf: 0.5
+  iou_dedup: 0.5          # drop a pseudo box overlapping a GT box of the same class
 
 train:
   model: yolo11s.pt

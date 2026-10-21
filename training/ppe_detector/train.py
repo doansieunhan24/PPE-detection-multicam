@@ -22,7 +22,7 @@ def main(argv: list[str] | None = None) -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--config", default=str(DEFAULT_CONFIG_DIR / "training_ppe.yaml"))
-    ap.add_argument("--data", help="data.yaml (default: <crops.out>/data.yaml)")
+    ap.add_argument("--data", help="data.yaml (default: SH17 person crops)")
     ap.add_argument("--model")
     ap.add_argument("--imgsz", type=int)
     ap.add_argument("--epochs", type=int)
@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> None:
 
     cfg = load_yaml(args.config)
     t = cfg["train"]
-    data = args.data or str(Path(cfg["crops"]["out"]) / "data.yaml")
+    data = args.data or str(Path(cfg["datasets"]["sh17"]["out_crops"]) / "data.yaml")
     name = args.name or t["name"]
     project = Path(t["project"]).resolve()
 
