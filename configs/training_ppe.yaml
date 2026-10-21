@@ -1,0 +1,41 @@
+# PPE detector training on SH17 person crops (CLAUDE.md D7, §9).
+
+seed: 0
+
+sh17:
+  root: data/external/sh17            # extracted Kaggle archive
+  # SH17 class ids (from sh17.yaml in the official repo)
+  names: {0: person, 1: ear, 2: ear-mufs, 3: face, 4: face-guard, 5: face-mask, 6: foot,
+          7: tool, 8: glasses, 9: gloves, 10: helmet, 11: hands, 12: head, 13: medical-suit,
+          14: shoes, 15: safety-suit, 16: safety-vest}
+  person_class: person
+
+# SH17 name -> our class name; order defines our class ids.
+# NOTE: SH17 "shoes" does not distinguish safety shoes from normal shoes (Limitations §17).
+target_classes:
+  helmet: helmet
+  safety-vest: vest
+  shoes: shoes
+  head: head          # negative/context for helmet
+  foot: foot          # negative/context for shoes
+
+crops:
+  out: data/processed/sh17_person_crops
+  min_keep_ratio: 0.6     # keep a PPE box if (inter with crop)/(box area) >= this
+  val_ratio: 0.1          # carved from SH17 train, split by source image
+  jpeg_quality: 95
+  # crop_pad / min_crop_w_px / min_crop_h_px are read from configs/perception.yaml (ppe:)
+  # so training crops match the inference crops.
+
+full_frame:               # baseline for experiment §10.3-5 (full-frame vs crop)
+  out: data/processed/sh17_full_frame
+
+train:
+  model: yolo11s.pt
+  imgsz: 320
+  epochs: 100
+  batch: 64
+  patience: 20
+  workers: 4
+  project: runs/ppe
+  name: sh17_crop_y11s

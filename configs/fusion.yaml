@@ -1,9 +1,23 @@
 # Visibility-aware evidence fusion (CLAUDE.md §7.3–7.5). Defaults; calibrate on val.
 
+# item = alert item; det_cls = detector class used as evidence.
+# SH17 "shoes" cannot tell safety shoes from normal shoes (Limitations §17).
 parts:
-  head:  {item: helmet}
-  torso: {item: vest}
-  feet:  {item: boots}
+  head:  {item: helmet, det_cls: helmet}
+  torso: {item: vest,   det_cls: vest}
+  feet:  {item: boots,  det_cls: shoes}
+
+rois:                         # §7.3 — TODO: tune on C2 val
+  kpt_conf_min: 0.3
+  head_expand: 1.5
+  head_up_ratio: 0.6          # interpretation: x (expanded head ROI height)
+  torso_expand: 0.10
+  feet_half_w_ratio: 0.08     # x person bbox height
+  feet_up_ratio: 0.03
+  feet_down_ratio: 0.05
+  fb_head: [0.0, 0.20]
+  fb_torso: [0.25, 0.60]
+  fb_feet: [0.88, 1.0]
 
 part_assign:
   containment_min: 0.5        # inter area / PPE box area

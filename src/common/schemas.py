@@ -30,6 +30,9 @@ class PersonDet(BaseModel):
     conf: float = Field(ge=0.0, le=1.0)
     kpts: list[Keypoint] = Field(default_factory=list)
     ppe_dets: list[PPEDet] = Field(default_factory=list)
+    # False when the PPE detector was not run on this person (crop too small, SGIE disabled).
+    # Empty ppe_dets then means "not observed", not "no PPE" — fusion must not apply p_neg.
+    ppe_checked: bool = True
     truncated_bottom: bool = False
 
     @field_validator("kpts")

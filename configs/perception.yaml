@@ -1,0 +1,25 @@
+# Offline perception backend (Ultralytics) — CLAUDE.md D5/D6/D7.
+# Output must match the DeepStream backend schema (PerceptionFrame).
+
+device: null                  # null = auto (cuda:0 if available), or "cpu", "0"
+
+pose:                         # PGIE equivalent: person bbox + 17 COCO keypoints
+  model: models/yolo11m-pose.pt  # Ultralytics auto-downloads if missing
+  # imgsz 960 vs 640: vtest.avi (~70px people) avg persons/frame 2.80 vs 0.75 — see process/ log
+  imgsz: 960
+  conf: 0.25
+  iou: 0.7
+  tracker: bytetrack.yaml     # bytetrack.yaml | botsort.yaml (Ultralytics built-in)
+
+ppe:                          # SGIE equivalent: PPE detector on person crops
+  enabled: false              # true once the SH17-crop detector is trained (P2)
+  model: models/ppe_sh17_crop.pt
+  imgsz: 320
+  conf: 0.25
+  iou: 0.5
+  crop_pad: 0.1               # pad person bbox by this ratio before cropping
+  min_crop_w_px: 24           # smaller persons are exported with ppe_checked=false
+  min_crop_h_px: 48
+  class_map: {}               # model class name -> canonical name (helmet, vest, boots, head, foot, ...)
+
+truncated_bottom_margin_px: 2   # bbox y2 within this margin of image bottom → truncated_bottom

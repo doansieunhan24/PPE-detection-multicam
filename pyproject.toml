@@ -25,7 +25,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["src*", "eval*"]
+include = ["src*", "eval*", "training*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -36,3 +36,11 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.flake8-bugbear]
+# frozen param dataclasses are safe as defaults
+extend-immutable-calls = [
+    "src.parts.part_rois.RoiParams",
+    "src.parts.ppe_assign.AssignParams",
+    "src.fusion.visibility.VisibilityParams",
+]
