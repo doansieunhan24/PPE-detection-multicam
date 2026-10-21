@@ -12,9 +12,9 @@ pose:                         # PGIE equivalent: person bbox + 17 COCO keypoints
   tracker: bytetrack.yaml     # bytetrack.yaml | botsort.yaml (Ultralytics built-in)
 
 ppe:                          # SGIE equivalent: PPE detector on person crops
-  enabled: false              # true once the SH17-crop detector is trained (P2)
+  enabled: true               # M2 = SH17+CHV person crops (docs/experiments.md)
   mode: crop                  # crop (SGIE, D7) | full (whole-frame baseline, §10.3-5)
-  model: models/ppe_sh17_crop.pt
+  model: models/sh17chv_crop_y11s.pt
   imgsz: 320
   conf: 0.25
   iou: 0.5

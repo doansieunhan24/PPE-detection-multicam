@@ -501,6 +501,8 @@ pytest -q && ruff check src eval tools
 | 2026-10-21 | Pose PGIE offline: `yolo11m-pose`, imgsz 960 | Trên vtest.avi (người ~70 px) imgsz 640 bỏ sót gần hết; 960 tăng ~3.7× số người phát hiện |
 | 2026-10-21 | Hiệu chỉnh p theo prior trung tính (`configs/p_calibration.yaml`, fit SH17 val) thay `p_neg=0.05` + conf thô; `theta_neg` −1.0 → −0.5; baseline B0–B3 dùng cờ "có box" (không dùng p đã hiệu chỉnh) | Đo trên SH17: không-box chỉ ≈ −1 log-LR, có box ≈ +3; p_neg 0.05 phóng đại bằng chứng âm. Tune lại trên C2 |
 | 2026-10-21 | Bổ sung CHV cho helmet/vest; pseudo-label head/shoes/foot | SH17 quá ít helmet/vest |
+| 2026-10-22 | Detector chính = M2 (SH17+CHV crops, YOLO11s@320) `models/sh17chv_crop_y11s` | CHV test helmet AP50 0.957, vest 0.913 (M1: 0.890 / 0.794) |
+| 2026-10-22 | Part-ROI/containment tune trên val SH17+CHV (containment 0.2, head_up 1.0, head_expand 1.8, torso_expand 0.4, feet 0.12/0.1); hiệu chỉnh p chỉ trên v ≥ 0.6 | Tăng recall gán PPE 12–23 điểm trên test; GT ảnh đơn bị điều kiện theo visibility nên không fit được tác động của v |
 | — | Số cam / loại cam / có Jetson Orin không: `TODO` | |
 
 ---

@@ -7,20 +7,20 @@ parts:
   torso: {item: vest,   det_cls: vest}
   feet:  {item: boots,  det_cls: shoes}
 
-rois:                         # §7.3 — TODO: tune on C2 val
+rois:                         # §7.3 — tuned on SH17+CHV val (training/visibility/sweep_rois.py); re-tune on C2
   kpt_conf_min: 0.3
-  head_expand: 1.5
-  head_up_ratio: 0.6          # interpretation: x (expanded head ROI height)
-  torso_expand: 0.10
-  feet_half_w_ratio: 0.08     # x person bbox height
+  head_expand: 1.8
+  head_up_ratio: 1.0          # x (expanded head ROI height); helmets sit above the face keypoints
+  torso_expand: 0.4
+  feet_half_w_ratio: 0.12     # x person bbox height
   feet_up_ratio: 0.03
-  feet_down_ratio: 0.05
+  feet_down_ratio: 0.1
   fb_head: [0.0, 0.20]
   fb_torso: [0.25, 0.60]
   fb_feet: [0.88, 1.0]
 
 part_assign:
-  containment_min: 0.5        # inter area / PPE box area
+  containment_min: 0.2        # inter area / PPE box area (val sweep: 0.5 lost 16 pts helmet recall)
   p_neg: 0.05                 # p when no box, only if p_calibration is null
   # neutral-prior calibration of detector output (SH17 val, training/visibility/calibrate.py):
   # a box ⇒ log-LR ≈ +3, no box ⇒ log-LR ≈ −0.7…−1.2. null → raw conf / p_neg
