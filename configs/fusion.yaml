@@ -34,8 +34,11 @@ visibility:
 evidence:
   p_clip: [0.01, 0.99]
   tau_s: 2.0
+  dt_weighting: true          # frame-rate invariant: Omega ~ W*tau (visibility-seconds); see evidence.py
+  dt_nominal_s: 0.04          # weight of a track's first observation
+  dt_max_s: 0.2               # cap per-observation weight after gaps
   eps: 1.0e-6
-  theta_obs: 1.0              # TODO: tune
+  theta_obs: 1.0              # visibility-seconds (steady W*tau); TODO: tune
   theta_pos: 1.0              # TODO: tune
   theta_neg: -1.0             # TODO: tune
   initial_state: UNKNOWN
@@ -45,3 +48,7 @@ alert:
   T_alert_s: 3.0
   T_unk_s: 30.0
   T_cooldown_s: 60.0
+
+baselines:                    # §7.6 — same detector/tracker/persistence as P (rule 6)
+  pos_thr: 0.25               # p >= this ⇒ "PPE seen" (= detector conf threshold)
+  primary_cam: cam1           # camera used by single-cam baselines B0/B1

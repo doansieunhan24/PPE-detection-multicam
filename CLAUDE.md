@@ -495,6 +495,9 @@ pytest -q && ruff check src eval tools
 | — | DeepStream version: `TODO` | |
 | 2026-10-21 | GPU dev: RTX 4060 Laptop 8 GB, Windows 11 + WSL2 Ubuntu-22.04 | Máy hiện có. DeepStream phải chạy qua WSL2/Docker hoặc máy Linux — TODO(verify) hỗ trợ WSL2 |
 | 2026-10-21 | Thư mục repo thực tế là `ppe_de/` (package name `ppe-multicam`) | Tên trong mục 5 chỉ là tên package |
+| 2026-10-21 | **§7.5 chuẩn hoá theo Δt** (`dt_weighting`, mặc định bật): `S_t = λS + Δt·E`, `Ω_t = λΩ + Δt·W` → Ω hội tụ ≈ W·τ (visibility-giây), không phụ thuộc FPS. **Chờ người dùng xác nhận** | Công thức gốc cộng theo frame ⇒ Ω ≈ W·fps·τ: ở 25 fps v=0.05 đã vượt θ_obs=1 → UNKNOWN gần như không bao giờ xảy ra. Có test minh hoạ (`tests/test_fusion.py`). Có thể tắt cờ để so sánh |
+| 2026-10-21 | Schema thêm `PersonDet.ppe_checked` | Phân biệt "detector không chạy" (không có bằng chứng) với "chạy mà không thấy PPE" (p_neg) |
+| 2026-10-21 | Pose PGIE offline: `yolo11m-pose`, imgsz 960 | Trên vtest.avi (người ~70 px) imgsz 640 bỏ sót gần hết; 960 tăng ~3.7× số người phát hiện |
 | — | Số cam / loại cam / có Jetson Orin không: `TODO` | |
 
 ---

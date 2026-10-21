@@ -19,20 +19,20 @@ def test_visible_cam_dominates_occluded_cam():
     acc = EvidenceAccumulator()
     m, omega = acc.update(0, [(0.10, 0.15), (0.95, 0.90)])
     assert m > 0
-    assert omega == pytest.approx(1.05)
+    assert omega == pytest.approx(1.05 * acc.params.dt_nominal_s)
 
 
 def test_no_visibility_ablation_lets_occluded_cam_count_fully():
     acc = EvidenceAccumulator(EvidenceParams(use_visibility=False))
     m, omega = acc.update(0, [(0.01, 0.05), (0.01, 0.05), (0.95, 0.90)])
-    assert m < 0 and omega == 3.0
+    assert m < 0 and omega == pytest.approx(3.0 * acc.params.dt_nominal_s)
 
 
 def test_temporal_decay():
     acc = EvidenceAccumulator(EvidenceParams(tau_s=2.0))
     acc.update(0, [(0.9, 1.0)])
     _, omega = acc.update(2000, [])
-    assert omega == pytest.approx(math.exp(-1))
+    assert omega == pytest.approx(acc.params.dt_nominal_s * math.exp(-1))
     assert acc.mean == pytest.approx(logit(0.9))  # mean unchanged by pure decay
 
 
@@ -72,3 +72,30 @@ def test_params_from_config():
     cfg = load_config("fusion")
     assert EvidenceParams.from_config(cfg).tau_s == cfg["evidence"]["tau_s"]
     assert StateParams.from_config(cfg).initial_state is CS.UNKNOWN
+
+
+def _steady_omega(fps: float, v: float, params: EvidenceParams, seconds: float = 20) -> float:
+    acc = EvidenceAccumulator(params)
+    step = 1000 / fps
+    for i in range(int(seconds * fps)):
+        _, omega = acc.update(round(i * step), [(0.5, v)])
+    return omega
+
+
+def test_omega_is_frame_rate_invariant():
+    prm = EvidenceParams(tau_s=2.0)
+    o10, o25 = _steady_omega(10, 0.5, prm), _steady_omega(25, 0.5, prm)
+    assert o10 == pytest.approx(o25, rel=0.1)
+    assert o25 == pytest.approx(0.5 * 2.0, rel=0.05)  # ~ W * tau
+
+
+def test_without_dt_weighting_low_visibility_saturates():
+    # documents the flaw of the per-frame formula: v=0.05 at 25 fps passes theta_obs=1
+    assert _steady_omega(25, 0.05, EvidenceParams(dt_weighting=False)) > 1.0
+    assert _steady_omega(25, 0.05, EvidenceParams()) < 1.0
+
+
+def test_no_temporal_omega_matches_steady_state_scale():
+    acc = EvidenceAccumulator(EvidenceParams(temporal=False, tau_s=2.0))
+    _, omega = acc.update(0, [(0.9, 0.5)])
+    assert omega == pytest.approx(1.0)
