@@ -84,3 +84,19 @@
 - **Visibility vs detection (test, M2, ROI mới)** — `eval/reports/visibility/report.md`, hình `visibility_reliability_{sh17,chv}.png`:
   - SH17 head: recall|worn 0.56 (v<0.2) → 0.90–0.92 (0.2–0.6) → 0.98–1.0 (v≥0.6); log LR⁻ −0.8 → −2.3/−2.5 → −3.8. Mô hình P dự đoán −4.27·v ≈ −0.4/−1.3/−2.1/−3.0 → **cùng xu hướng, gần tỷ lệ với v**.
   - AUC(v, detected|worn): head 0.83 (SH17) / 0.80 (CHV), feet 0.78 > person conf 0.66/0.53/0.67. Torso: v không dự đoán được (AUC 0.47/0.58) — sau khi sửa ROI, vest gần như luôn được thấy khi mặc.
+
+### 2026-10-22 — Thí nghiệm 5: detector trên crop người (SGIE, D7) vs full-frame
+- Cùng dữ liệu train (SH17), cùng YOLO11s, cùng pose/ROI/GT người (SH17 test, 2,450 người khớp GT).
+- F1 full-frame: imgsz 640, batch 16, best/early-stop trong 94 epoch; mAP50 trên SH17 full-frame test 0.553 (helmet 0.682, vest 0.446, shoes 0.583) — *không so trực tiếp với mAP crop vì khác ảnh test*.
+- So sánh ở mức bài toán (`eval/reports/exp5_crop_vs_full/results.md`, ROI đã tune):
+
+| Detector | Part | recall\|worn | recall v<0.6 | recall v≥0.6 | FPR |
+|---|---|---|---|---|---|
+| crop M1 (320) | head | **0.847** | **0.726** | **0.968** | 0.020 |
+| full F1 (640) | head | 0.694 | 0.516 | 0.871 | 0.016 |
+| crop M1 | torso | **0.672** | 0.500 | **0.712** | 0.012 |
+| full F1 | torso | 0.609 | 0.833 (n nhỏ) | 0.558 | 0.010 |
+| crop M1 | feet | **0.836** | **0.623** | **0.903** | 0.029 |
+| full F1 | feet | 0.794 | 0.570 | 0.864 | 0.023 |
+
+- Kết luận: crop người tăng recall helmet +15 điểm (+21 khi v<0.6) với FPR gần như không đổi → **xác nhận D7**.
