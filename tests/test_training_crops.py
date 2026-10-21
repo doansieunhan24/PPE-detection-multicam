@@ -37,3 +37,25 @@ def test_crop_labels_keep_clip_shift():
     assert [lb.cls for lb in out] == [0, 1]
     assert out[0].box == (50, 10, 100, 60)
     assert out[1].box == (0, 100, 110, 200)
+
+
+def test_split_ids_carves_val_without_leakage(tmp_path):
+    from training.ppe_detector.prepare_sh17_person_crops import split_ids
+
+    (tmp_path / "tr.txt").write_text("\n".join(f"imgs/a{i}.jpg" for i in range(20)), "utf-8")
+    (tmp_path / "te.txt").write_text("a20.jpg\na21.jpg\nmissing.jpg\n", "utf-8")
+    ids = [f"a{i}" for i in range(22)]
+    s = split_ids(tmp_path, {"train": "tr.txt", "test": "te.txt"}, ids, 0.1, seed=0)
+    assert len(s["val"]) == 2 and len(s["train"]) == 18 and s["test"] == ["a20", "a21"]
+    assert not set(s["train"]) & set(s["val"])
+    assert s == split_ids(tmp_path, {"train": "tr.txt", "test": "te.txt"}, ids, 0.1, seed=0)
+
+
+def test_pseudo_label_iou():
+    import numpy as np
+
+    from training.ppe_detector.pseudo_label import iou
+
+    a = np.array([[0, 0, 1, 1.0]])
+    b = np.array([[0, 0, 1, 1.0], [0.5, 0, 1.5, 1.0], [2, 2, 3, 3.0]])
+    assert iou(a, b) == pytest.approx(np.array([[1.0, 1 / 3, 0.0]]))

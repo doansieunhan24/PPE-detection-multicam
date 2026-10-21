@@ -354,6 +354,7 @@ else:                    state = state_{t−1}        # hysteresis
 |---|---|---|
 | Train PPE detector | **SH17** (17 class: person, head, helmet, safety-vest, shoes, foot, gloves, ...) | Tạo **tập crop người** (`prepare_sh17_person_crops.py`) cho khớp với phân phối input của SGIE. Lưu ý: class "shoes" **không phân biệt giày bảo hộ với giày thường**, phải ghi rõ ở phần Limitations. |
 | Bổ sung helmet | SHWD, CHV | Merge class cẩn thận (map tên class). |
+| **Đã có (2026-10-21)** | SH17: 8,099 ảnh / 75,994 instance (khớp README), chỉ 927 helmet + 530 safety-vest. CHV: 1,330 ảnh, person/vest/4 màu mũ (3,887 person, 1,784 vest, 3,538 helmet), không nhãn head/shoes/foot → pseudo-label bằng model SH17 (chỉ train/val) | Chi tiết số crop/instance: `data/processed/*/stats.json`, `docs/experiments.md` |
 | Fall (đơn góc) | Le2i, UR Fall, CAUCAFall | Train/eval module fall. |
 | Fall (đa góc) | Multiple Cameras Fall Dataset (Univ. Montréal, 8 cam) | Đánh giá fusion fall đa camera. |
 | **Đánh giá C1** | **Bộ tự thu (C2)** | Chỉ dùng để **eval** (hoặc chia theo session), **không train detector trên bộ này**. |
