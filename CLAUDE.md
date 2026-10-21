@@ -499,6 +499,8 @@ pytest -q && ruff check src eval tools
 | 2026-10-21 | **§7.5 chuẩn hoá theo Δt** (`dt_weighting`, mặc định bật): `S_t = λS + Δt·E`, `Ω_t = λΩ + Δt·W` → Ω hội tụ ≈ W·τ (visibility-giây), không phụ thuộc FPS. **Chờ người dùng xác nhận** | Công thức gốc cộng theo frame ⇒ Ω ≈ W·fps·τ: ở 25 fps v=0.05 đã vượt θ_obs=1 → UNKNOWN gần như không bao giờ xảy ra. Có test minh hoạ (`tests/test_fusion.py`). Có thể tắt cờ để so sánh |
 | 2026-10-21 | Schema thêm `PersonDet.ppe_checked` | Phân biệt "detector không chạy" (không có bằng chứng) với "chạy mà không thấy PPE" (p_neg) |
 | 2026-10-21 | Pose PGIE offline: `yolo11m-pose`, imgsz 960 | Trên vtest.avi (người ~70 px) imgsz 640 bỏ sót gần hết; 960 tăng ~3.7× số người phát hiện |
+| 2026-10-21 | Hiệu chỉnh p theo prior trung tính (`configs/p_calibration.yaml`, fit SH17 val) thay `p_neg=0.05` + conf thô; `theta_neg` −1.0 → −0.5; baseline B0–B3 dùng cờ "có box" (không dùng p đã hiệu chỉnh) | Đo trên SH17: không-box chỉ ≈ −1 log-LR, có box ≈ +3; p_neg 0.05 phóng đại bằng chứng âm. Tune lại trên C2 |
+| 2026-10-21 | Bổ sung CHV cho helmet/vest; pseudo-label head/shoes/foot | SH17 quá ít helmet/vest |
 | — | Số cam / loại cam / có Jetson Orin không: `TODO` | |
 
 ---

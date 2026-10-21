@@ -94,3 +94,10 @@ def test_cooldown_blocks_second_episode():
 def test_b0_no_persistence():
     tr = PPEAlertTracker(PPEAlertParams.from_config(load_config("fusion"), persistence=False))
     assert tr.update(5, "helmet", CS.VIOLATION, 0, True) is not None
+
+
+def test_baselines_use_detection_flag_not_calibrated_p():
+    # calibrated "no box" p can exceed pos_thr (torso: 0.33); B0 must still say VIOLATION
+    o = [CamObs("cam1", p=0.33, v=1.0, det_conf=0.9, detected=False)]
+    assert SingleCamPolicy("cam1", pos_thr=0.25).update(0, o) is CS.VIOLATION
+    assert OrPolicy(0.25).update(0, o) is CS.VIOLATION

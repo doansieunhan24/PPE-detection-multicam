@@ -20,9 +20,13 @@ from src.fusion.state_machine import ComplianceStateMachine, StateParams
 @dataclass(frozen=True)
 class CamObs:
     cam_id: str
-    p: float  # PPE probability for the part (matched box conf, or p_neg)
+    p: float  # PPE probability for the part (calibrated, or raw conf / p_neg)
     v: float  # visibility
     det_conf: float  # person detector confidence
+    detected: bool | None = None  # a PPE box was matched; None → infer from p >= pos_thr
+
+    def seen(self, pos_thr: float) -> bool:
+        return self.detected if self.detected is not None else self.p >= pos_thr
 
 
 class Policy(Protocol):
@@ -40,7 +44,7 @@ class SingleCamPolicy:
         mine = [o for o in obs if o.cam_id == self.cam_id]
         if not mine:
             return CS.UNKNOWN  # person not in this camera: nothing to say
-        return CS.COMPLIANT if mine[0].p >= self.pos_thr else CS.VIOLATION
+        return CS.COMPLIANT if mine[0].seen(self.pos_thr) else CS.VIOLATION
 
 
 @dataclass
@@ -52,7 +56,7 @@ class OrPolicy:
     def update(self, ts_ms: int, obs: Sequence[CamObs]) -> CS:
         if not obs:
             return CS.UNKNOWN
-        return CS.COMPLIANT if any(o.p >= self.pos_thr for o in obs) else CS.VIOLATION
+        return CS.COMPLIANT if any(o.seen(self.pos_thr) for o in obs) else CS.VIOLATION
 
 
 @dataclass
@@ -64,7 +68,7 @@ class MajorityPolicy:
     def update(self, ts_ms: int, obs: Sequence[CamObs]) -> CS:
         if not obs:
             return CS.UNKNOWN
-        pos = sum(o.p >= self.pos_thr for o in obs)
+        pos = sum(o.seen(self.pos_thr) for o in obs)
         return CS.COMPLIANT if 2 * pos >= len(obs) else CS.VIOLATION
 
 

@@ -17,10 +17,20 @@ PERSON = (100.0, 100.0, 200.0, 500.0)  # 100 x 400 px, upright
 def standing_kpts(conf: float = 0.9):
     k = [(0.0, 0.0, 0.0)] * 17
     pts = {
-        0: (150, 130), 1: (145, 125), 2: (155, 125), 3: (140, 128), 4: (160, 128),
-        5: (130, 180), 6: (170, 180), 9: (125, 300), 10: (175, 300),
-        11: (135, 300), 12: (165, 300), 15: (140, 490), 16: (160, 490),
-    }  # fmt: skip
+        0: (150, 130),
+        1: (145, 125),
+        2: (155, 125),
+        3: (140, 128),
+        4: (160, 128),
+        5: (130, 180),
+        6: (170, 180),
+        9: (125, 300),
+        10: (175, 300),
+        11: (135, 300),
+        12: (165, 300),
+        15: (140, 490),
+        16: (160, 490),
+    }
     for i, (x, y) in pts.items():
         k[i] = (float(x), float(y), conf)
     return k
@@ -108,3 +118,20 @@ def test_params_from_config():
     assert RoiParams.from_config(cfg).fb_head == (0.0, 0.2)
     assert AssignParams.from_config(cfg).p_neg == cfg["part_assign"]["p_neg"]
     assert VisibilityParams.from_config(cfg).h_ref_px == cfg["visibility"]["h_ref_px"]
+
+
+def test_calibrated_p_neutral_prior():
+    from src.parts.ppe_assign import calibrated_p
+
+    cal = {"a": 1.0, "c": 3.0, "d": -1.0}
+    assert calibrated_p(None, cal) == pytest.approx(1 / (1 + 2.718281828**1))
+    assert calibrated_p(0.5, cal) == pytest.approx(1 / (1 + 2.718281828**-3))
+
+
+def test_calibrated_assignment_uses_part_params():
+    cal = {"head": {"a": 1.0, "c": 3.0, "d": -1.2}}
+    p = _person([])
+    obs = observe_part(
+        p, part_roi(PartName.HEAD, PERSON, p.kpts), "helmet", AssignParams(calibration=cal)
+    )
+    assert obs.p == pytest.approx(1 / (1 + 2.718281828**1.2))

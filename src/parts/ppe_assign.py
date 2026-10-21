@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 from src.common.schemas import BBox, Keypoint, PersonDet, PPEDet
 from src.parts.part_rois import WRISTS, PartRoi
@@ -16,15 +17,37 @@ class AssignParams:
     p_neg: float = 0.05
     held_helmet_wrist_dist: float = 0.15  # x person bbox height
     wrist_conf_min: float = 0.3
+    # per part {"a", "c", "d"}: logit p = a*logit(conf) + c if box else d (neutral prior);
+    # None → p = raw detector conf, p_neg when no box
+    calibration: Mapping[str, Mapping[str, float]] | None = None
 
     @classmethod
     def from_config(cls, cfg: dict) -> AssignParams:
         a = cfg["part_assign"]
+        path = a.get("p_calibration")
         return cls(
             containment_min=a["containment_min"],
             p_neg=a["p_neg"],
             held_helmet_wrist_dist=a["held_helmet_wrist_dist"],
+            calibration=load_p_calibration(path) if path else None,
         )
+
+
+def load_p_calibration(path: str | Path) -> dict[str, dict[str, float]]:
+    import yaml
+
+    return yaml.safe_load(Path(path).read_text(encoding="utf-8"))["parts"]
+
+
+def _sigmoid(z: float) -> float:
+    return 1.0 / (1.0 + math.exp(-z))
+
+
+def calibrated_p(conf: float | None, cal: Mapping[str, float], lo: float = 0.01) -> float:
+    if conf is None:
+        return _sigmoid(cal["d"])
+    c = min(max(conf, lo), 1 - lo)
+    return _sigmoid(cal["a"] * math.log(c / (1 - c)) + cal["c"])
 
 
 @dataclass(frozen=True)
@@ -77,4 +100,8 @@ def observe_part(
             continue
         if inside and (best is None or d.conf > best.conf):
             best = d
-    return PartObservation(p=best.conf if best else prm.p_neg, matched=best, held_helmet=held)
+    if prm.calibration is not None:
+        p = calibrated_p(best.conf if best else None, prm.calibration[roi.part.value])
+    else:
+        p = best.conf if best else prm.p_neg
+    return PartObservation(p=p, matched=best, held_helmet=held)

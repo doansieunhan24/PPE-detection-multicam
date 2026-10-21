@@ -138,7 +138,7 @@ class PPEEngine:
                         continue
                     others = [q.bbox for q in fr.persons if q.track_id != p.track_id]
                     v = visibility(roi, p.bbox, others, fr.img_w, fr.img_h, self.vis_prm).v
-                    obs.append(CamObs(cam, ob.p, v, p.conf))
+                    obs.append(CamObs(cam, ob.p, v, p.conf, detected=ob.matched is not None))
                     per_cam[cam] = CamEvidence(p=ob.p, v=v)
                 pol = self._policy(gid, part)
                 st = pol.update(ts_ms, obs)
