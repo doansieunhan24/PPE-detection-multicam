@@ -30,6 +30,7 @@ visibility:
   use_blur: false
   blur_beta: 100.0            # TODO(verify): tune on val
   learned: false              # ablation: v_learned (logistic regression)
+  learned_path: configs/visibility_learned.yaml   # written by training/visibility/calibrate.py
 
 evidence:
   p_clip: [0.01, 0.99]

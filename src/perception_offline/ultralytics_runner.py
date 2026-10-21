@@ -46,26 +46,32 @@ class UltralyticsPerception:
         self.pose = YOLO(self.pose_cfg["model"])
         self.ppe = YOLO(self.ppe_cfg["model"]) if self.ppe_cfg.get("enabled") else None
 
-    def process(self, frame: np.ndarray) -> list[PersonDet]:
+    def process(self, frame: np.ndarray, track: bool = True) -> list[PersonDet]:
+        """track=False: independent still images — detections get IDs 0..N-1."""
         img_h, img_w = frame.shape[:2]
-        res = self.pose.track(
-            frame,
-            persist=True,
-            tracker=self.pose_cfg["tracker"],
+        kw = dict(
             imgsz=self.pose_cfg["imgsz"],
             conf=self.pose_cfg["conf"],
             iou=self.pose_cfg["iou"],
             classes=[0],
             device=self.device,
             verbose=False,
-        )[0]
+        )
+        if track:
+            res = self.pose.track(frame, persist=True, tracker=self.pose_cfg["tracker"], **kw)[0]
+        else:
+            res = self.pose.predict(frame, **kw)[0]
         boxes = res.boxes
         if boxes is None or len(boxes) == 0:
             return []
+        if track:
+            ids = None if boxes.id is None else boxes.id.int().cpu().numpy()
+        else:
+            ids = np.arange(len(boxes))
         persons = persons_from_arrays(
             xyxy=boxes.xyxy.cpu().numpy(),
             conf=boxes.conf.cpu().numpy(),
-            track_ids=None if boxes.id is None else boxes.id.int().cpu().numpy(),
+            track_ids=ids,
             kpts=None if res.keypoints is None else res.keypoints.data.cpu().numpy(),
             img_h=img_h,
             truncated_margin_px=self.margin_px,

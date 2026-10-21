@@ -55,7 +55,9 @@ class PPEEngine:
         f = self.fusion_cfg
         self.roi_prm = RoiParams.from_config(f)
         self.assign_prm = AssignParams.from_config(f)
-        self.vis_prm = VisibilityParams.from_config(f)
+        self.vis_prm = VisibilityParams.from_config(f, learned=self.ablation.get("v_learned"))
+        # v_learned only changes visibility; the policy must not receive it
+        self.ablation = {k: v for k, v in self.ablation.items() if k != "v_learned"}
         self.parts = {PartName(k): v for k, v in f["parts"].items()}
         assoc = self.zones_cfg.get("association", {})
         self.d_max_m = assoc.get("d_max_m", 0.8)

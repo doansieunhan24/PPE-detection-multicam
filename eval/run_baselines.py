@@ -17,7 +17,7 @@ from pathlib import Path
 
 from eval.metrics import event_metrics, load_gt_csv, majority_gid_to_gt, unknown_fraction
 from src.analytics_runner import git_commit, run
-from src.common.config import DEFAULT_CONFIG_DIR
+from src.common.config import DEFAULT_CONFIG_DIR, load_config
 from src.common.logging import get_logger, setup_logging
 from src.common.schemas import AlertEvent, PersonPartState
 
@@ -29,6 +29,7 @@ ABLATIONS = {
     "P-no_unknown": {"allow_unknown": False},
     "P-no_temporal": {"temporal": False},
     "P-dempster_shafer": {"method": "dempster_shafer"},
+    "P-v_learned": {"v_learned": True},
 }
 
 
@@ -108,6 +109,12 @@ def main(argv: list[str] | None = None) -> None:
     }
     if args.ablations:
         variants.update({k: ("P", v) for k, v in ABLATIONS.items()})
+        learned = load_config("fusion", Path(args.config))["visibility"]["learned_path"]
+        if not Path(learned).exists():
+            log.warning(
+                "skip P-v_learned: %s missing (run training/visibility/calibrate.py)", learned
+            )
+            variants.pop("P-v_learned")
 
     out = Path(args.out)
     results: dict[str, dict] = {}

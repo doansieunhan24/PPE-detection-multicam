@@ -5,8 +5,10 @@ v = s_kp * s_size * (1 - r_occ) * s_blur * s_fallback      clipped to [0, 1]
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import math
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -21,16 +23,33 @@ class VisibilityParams:
     blur_beta: float = 100.0
     fallback_penalty: float = 0.5
     occ_grid: int = 16  # r_occ estimated on an occ_grid x occ_grid sample grid
+    # ablation v_learned: per part {"w": [...], "b": float} over LEARNED_FEATURES
+    learned: Mapping[str, Mapping] | None = None
 
     @classmethod
-    def from_config(cls, cfg: dict) -> VisibilityParams:
+    def from_config(cls, cfg: dict, learned: bool | None = None) -> VisibilityParams:
         v = cfg["visibility"]
+        use_learned = v.get("learned", False) if learned is None else learned
         return cls(
             h_ref_px=v["h_ref_px"],
             use_blur=v.get("use_blur", False),
             blur_beta=v.get("blur_beta", 100.0),
             fallback_penalty=cfg["part_assign"]["fallback_penalty"],
+            learned=load_learned(v["learned_path"]) if use_learned else None,
         )
+
+
+LEARNED_FEATURES = ("s_kp", "s_size", "vis_occ", "fallback", "log_h_roi")
+
+
+def load_learned(path: str | Path) -> dict[str, dict]:
+    """Learned visibility per part, written by training/visibility/calibrate.py."""
+    import yaml
+
+    d = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    if tuple(d["features"]) != LEARNED_FEATURES:
+        raise ValueError(f"{path}: features {d['features']} != {LEARNED_FEATURES}")
+    return d["parts"]
 
 
 @dataclass(frozen=True)
@@ -40,9 +59,12 @@ class VisibilityTerms:
     r_occ: float
     s_blur: float
     s_fallback: float
+    v_learned: float | None = None
 
     @property
     def v(self) -> float:
+        if self.v_learned is not None:
+            return self.v_learned
         val = self.s_kp * self.s_size * (1 - self.r_occ) * self.s_blur * self.s_fallback
         return float(min(1.0, max(0.0, val)))
 
@@ -86,10 +108,19 @@ def visibility(
 ) -> VisibilityTerms:
     h_roi = roi.box[3] - roi.box[1]
     occ = closer_persons(person_bbox, other_bboxes)
+    s_size = min(1.0, max(0.0, h_roi) / prm.h_ref_px)
+    r_occ = occlusion_ratio(roi.box, occ, img_w, img_h, prm.occ_grid)
+    v_learned = None
+    if prm.learned is not None:
+        lp = prm.learned[roi.part.value]
+        x = (roi.s_kp, s_size, 1.0 - r_occ, float(roi.fallback), math.log(max(h_roi, 1.0)))
+        z = sum(wi * xi for wi, xi in zip(lp["w"], x, strict=True)) + lp["b"]
+        v_learned = 1.0 / (1.0 + math.exp(-z))
     return VisibilityTerms(
         s_kp=roi.s_kp,
-        s_size=min(1.0, max(0.0, h_roi) / prm.h_ref_px),
-        r_occ=occlusion_ratio(roi.box, occ, img_w, img_h, prm.occ_grid),
+        s_size=s_size,
+        r_occ=r_occ,
         s_blur=blur_score(roi_img, prm.blur_beta) if prm.use_blur else 1.0,
         s_fallback=prm.fallback_penalty if roi.fallback else 1.0,
+        v_learned=v_learned,
     )
