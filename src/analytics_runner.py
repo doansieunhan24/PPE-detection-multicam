@@ -16,6 +16,7 @@ import subprocess
 from pathlib import Path
 
 from src.association.ground_plane import sync_groups
+from src.behavior.engine import BehaviorEngine
 from src.common.config import DEFAULT_CONFIG_DIR, load_config
 from src.common.jsonl import read_frames
 from src.common.logging import get_logger, setup_logging
@@ -65,6 +66,7 @@ def run(
     zones_cfg = load_config("zones", config_dir)
     cams_cfg = load_config("cameras", config_dir)
     alerts_cfg = load_config("alerts", config_dir)
+    behavior_cfg = load_config("behavior", config_dir)
     calibs = load_calibs(cams_cfg, config_dir.parent)
 
     streams = {
@@ -76,6 +78,7 @@ def run(
     engine = PPEEngine(
         fusion_cfg, zones_cfg, calibs, policy, ablation, alerts_cfg.get("levels", {})
     )
+    behavior = BehaviorEngine(behavior_cfg, zones_cfg, alerts_cfg.get("levels", {}))
 
     out_dir.mkdir(parents=True, exist_ok=True)
     n_groups = n_alerts = 0
@@ -90,6 +93,8 @@ def run(
             t_first = ts if t_first is None else t_first
             t_last = ts
             states, alerts, gid_of = engine.step(group, ts)
+            floor_of = {st.global_id: st.floor_xy for st in states}
+            alerts += behavior.step(group, ts, gid_of, floor_of)
             for s in states:
                 fs.write(s.model_dump_json() + "\n")
             for a in alerts:
