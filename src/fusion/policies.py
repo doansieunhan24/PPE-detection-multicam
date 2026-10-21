@@ -107,14 +107,16 @@ class ProposedPolicy:
 POLICY_IDS = ("B0", "B1", "B2", "B3", "B4", "P")
 
 
-def make_policy(policy_id: str, fusion_cfg: dict, primary_cam: str = "cam1", **ablation) -> Policy:
+def make_policy(
+    policy_id: str, fusion_cfg: dict, primary_cam: str | None = None, **ablation
+) -> Policy:
     """Factory. `ablation` overrides EvidenceParams/StateParams fields for P variants,
     e.g. use_visibility=False, temporal=False, allow_unknown=False,
     method="dempster_shafer"."""
     b = fusion_cfg.get("baselines", {})
     thr = b.get("pos_thr", 0.25)
     if policy_id in ("B0", "B1"):
-        return SingleCamPolicy(b.get("primary_cam", primary_cam), thr)
+        return SingleCamPolicy(primary_cam or b.get("primary_cam", "cam1"), thr)
     if policy_id == "B2":
         return OrPolicy(thr)
     if policy_id == "B3":
