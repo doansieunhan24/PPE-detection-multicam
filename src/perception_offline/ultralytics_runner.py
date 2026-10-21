@@ -21,6 +21,7 @@ import numpy as np
 from src.common.config import DEFAULT_CONFIG_DIR, load_yaml
 from src.common.logging import get_logger, setup_logging
 from src.common.schemas import PerceptionFrame, PersonDet
+from src.parts.ppe_assign import containment
 from src.perception_offline.convert import (
     file_ts_ms,
     is_live_uri,
@@ -85,6 +86,9 @@ class UltralyticsPerception:
                 p.ppe_checked = False
             return
         c = self.ppe_cfg
+        if c.get("mode", "crop") == "full":
+            self._run_ppe_full(frame, persons, img_w, img_h)
+            return
         crops, owners, origins = [], [], []
         for p in persons:
             x1, y1, x2, y2 = (
@@ -111,6 +115,28 @@ class UltralyticsPerception:
                 class_map=c.get("class_map") or {},
                 crop_origin=origin,
             )
+
+    def _run_ppe_full(
+        self, frame: np.ndarray, persons: list[PersonDet], img_w: int, img_h: int
+    ) -> None:
+        """Baseline (§10.3-5): detector on the whole frame; each box goes to the persons whose
+        padded bbox contains it (containment >= 0.5)."""
+        c = self.ppe_cfg
+        r = self.ppe.predict(
+            frame, imgsz=c["imgsz"], conf=c["conf"], iou=c["iou"], device=self.device, verbose=False
+        )[0]
+        b = r.boxes
+        dets = ppe_from_arrays(
+            xyxy=b.xyxy.cpu().numpy(),
+            conf=b.conf.cpu().numpy(),
+            cls_idx=b.cls.int().cpu().numpy(),
+            names=r.names,
+            class_map=c.get("class_map") or {},
+            crop_origin=(0, 0),
+        )
+        for p in persons:
+            region = pad_clip_bbox(p.bbox, c["crop_pad"], img_w, img_h)
+            p.ppe_dets = [d for d in dets if containment(d.bbox, region) >= 0.5]
 
 
 def run_camera(

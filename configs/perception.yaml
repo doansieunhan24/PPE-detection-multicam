@@ -13,6 +13,7 @@ pose:                         # PGIE equivalent: person bbox + 17 COCO keypoints
 
 ppe:                          # SGIE equivalent: PPE detector on person crops
   enabled: false              # true once the SH17-crop detector is trained (P2)
+  mode: crop                  # crop (SGIE, D7) | full (whole-frame baseline, §10.3-5)
   model: models/ppe_sh17_crop.pt
   imgsz: 320
   conf: 0.25

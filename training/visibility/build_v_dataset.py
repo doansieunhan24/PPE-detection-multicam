@@ -76,6 +76,9 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--training-config", default=str(DEFAULT_CONFIG_DIR / "training_ppe.yaml"))
     ap.add_argument("--out", default="data/processed/visibility")
     ap.add_argument("--limit", type=int)
+    ap.add_argument("--ppe-mode", choices=["crop", "full"], default="crop")
+    ap.add_argument("--ppe-imgsz", type=int, help="override ppe.imgsz (e.g. 640 for full mode)")
+    ap.add_argument("--name", help="output table name (default: <split>)")
     args = ap.parse_args(argv)
     setup_logging()
 
@@ -86,7 +89,9 @@ def main(argv: list[str] | None = None) -> None:
     names = {int(k): v for k, v in sh["names"].items()}
     by_name = {v: k for k, v in names.items()}
     pcfg = load_config("perception")
-    pcfg["ppe"] = {**pcfg["ppe"], "enabled": True, "model": args.ppe_weights}
+    pcfg["ppe"] = {**pcfg["ppe"], "enabled": True, "model": args.ppe_weights, "mode": args.ppe_mode}
+    if args.ppe_imgsz:
+        pcfg["ppe"]["imgsz"] = args.ppe_imgsz
     fusion = load_config("fusion")
     roi_prm, asg_prm = RoiParams.from_config(fusion), AssignParams.from_config(fusion)
     vis_prm = VisibilityParams.from_config(fusion)
@@ -101,7 +106,8 @@ def main(argv: list[str] | None = None) -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     stats: Counter = Counter()
-    with open(out / f"{args.split}.csv", "w", encoding="utf-8", newline="") as f:
+    table = out / f"{args.name or args.split}.csv"
+    with open(table, "w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, FIELDS)
         w.writeheader()
         for k, path in enumerate(images):
@@ -156,7 +162,7 @@ def main(argv: list[str] | None = None) -> None:
                     )
             if (k + 1) % 200 == 0:
                 log.info("%d/%d images %s", k + 1, len(images), dict(stats))
-    log.info("done %s → %s", dict(stats), out / f"{args.split}.csv")
+    log.info("done %s → %s", dict(stats), table)
 
 
 if __name__ == "__main__":
