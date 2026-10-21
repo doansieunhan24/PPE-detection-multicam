@@ -100,3 +100,16 @@
 | full F1 | feet | 0.794 | 0.570 | 0.864 | 0.023 |
 
 - Kết luận: crop người tăng recall helmet +15 điểm (+21 khi v<0.6) với FPR gần như không đổi → **xác nhận D7**.
+
+### 2026-10-22 — M3: YOLO11m vs M2 YOLO11s (cùng SH17+CHV crops, imgsz 320)
+- M3: batch 32, best epoch 58 / 78 (2.06 h). `eval/reports/detector_m2_m3/results.md`:
+
+| Model | Test | mAP50 | mAP50-95 | helmet | vest | shoes | head | foot |
+|---|---|---|---|---|---|---|---|---|
+| M2 y11s | SH17 | 0.640 | 0.424 | 0.741 | 0.577 | 0.697 | 0.949 | 0.237 |
+| M3 y11m | SH17 | 0.660 | 0.442 | 0.753 | 0.624 | 0.707 | 0.945 | 0.271 |
+| M2 y11s | CHV | 0.935 | 0.540 | 0.957 | 0.913 | – | – | – |
+| M3 y11m | CHV | 0.930 | 0.544 | 0.959 | 0.901 | – | – | – |
+
+- Tốc độ (PyTorch FP32, batch 64 crop 320, RTX 4060 Laptop): M2 2.75 ms/crop, M3 4.51 ms/crop (×1.64).
+- Quyết định: giữ **M2** mặc định (real-time đa cam, 8 GB); M3 tăng chủ yếu ở SH17 vest, không tăng trên CHV (miền công trường).

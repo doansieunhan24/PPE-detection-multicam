@@ -10,10 +10,11 @@
 - Eval: event metrics, `run_baselines` (bảng chính + ablation), `eval_detector`, `compare_evidence`
 - Tools thu C2: calibrate_homography, sync_offsets, label_intervals
 - Phân tích visibility trên SH17/CHV: recall|worn và |log LR⁻| tăng theo v (hình trong `eval/reports/visibility/`)
+- Thí nghiệm 5: crop người tăng recall helmet +15 điểm so với full-frame (xác nhận D7)
 - 93 test pass, ruff sạch
 
 ## Đang dở
-- Train F1 = baseline full-frame (thí nghiệm 5) — `runs/train_sh17_full_y11s.log`; sau đó: bảng bằng chứng `--ppe-mode full` + `compare_evidence` crop M1 vs full F1
+- (không có) — thí nghiệm 5 (crop vs full-frame) và M3 đã xong, xem `docs/experiments.md`
 
 ## Blocker / chờ người dùng
 - **Xác nhận** các thay đổi công thức: dt_weighting (§7.5), p calibration + theta_neg −0.5 (Decision Log)

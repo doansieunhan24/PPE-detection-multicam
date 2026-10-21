@@ -503,6 +503,7 @@ pytest -q && ruff check src eval tools
 | 2026-10-21 | Bổ sung CHV cho helmet/vest; pseudo-label head/shoes/foot | SH17 quá ít helmet/vest |
 | 2026-10-22 | Detector chính = M2 (SH17+CHV crops, YOLO11s@320) `models/sh17chv_crop_y11s` | CHV test helmet AP50 0.957, vest 0.913 (M1: 0.890 / 0.794) |
 | 2026-10-22 | Part-ROI/containment tune trên val SH17+CHV (containment 0.2, head_up 1.0, head_expand 1.8, torso_expand 0.4, feet 0.12/0.1); hiệu chỉnh p chỉ trên v ≥ 0.6 | Tăng recall gán PPE 12–23 điểm trên test; GT ảnh đơn bị điều kiện theo visibility nên không fit được tác động của v |
+| 2026-10-22 | Giữ M2 (YOLO11s) thay vì M3 (YOLO11m) | M3 +2 điểm mAP50 SH17 nhưng ngang trên CHV, chậm ×1.64 |
 | — | Số cam / loại cam / có Jetson Orin không: `TODO` | |
 
 ---
