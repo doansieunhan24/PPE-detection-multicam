@@ -28,6 +28,7 @@ ABLATIONS = {
     "P-no_v": {"use_visibility": False},
     "P-no_unknown": {"allow_unknown": False},
     "P-no_temporal": {"temporal": False},
+    "P-dempster_shafer": {"method": "dempster_shafer"},
 }
 
 

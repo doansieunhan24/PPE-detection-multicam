@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from src.common.schemas import ComplianceState as CS
+from src.fusion.dempster_shafer import DSAccumulator
 from src.fusion.evidence import EvidenceAccumulator, EvidenceParams, logit
 from src.fusion.state_machine import ComplianceStateMachine, StateParams
 
@@ -84,9 +85,10 @@ class ConfWeightedPolicy:
 
 @dataclass
 class ProposedPolicy:
-    """P: visibility-weighted log-odds + temporal accumulation + UNKNOWN (§7.5)."""
+    """P: visibility-weighted log-odds + temporal accumulation + UNKNOWN (§7.5).
+    `evidence` may also be a DSAccumulator (Dempster–Shafer ablation)."""
 
-    evidence: EvidenceAccumulator
+    evidence: EvidenceAccumulator | DSAccumulator
     sm: ComplianceStateMachine
 
     @classmethod
@@ -103,7 +105,8 @@ POLICY_IDS = ("B0", "B1", "B2", "B3", "B4", "P")
 
 def make_policy(policy_id: str, fusion_cfg: dict, primary_cam: str = "cam1", **ablation) -> Policy:
     """Factory. `ablation` overrides EvidenceParams/StateParams fields for P variants,
-    e.g. use_visibility=False, temporal=False, allow_unknown=False."""
+    e.g. use_visibility=False, temporal=False, allow_unknown=False,
+    method="dempster_shafer"."""
     b = fusion_cfg.get("baselines", {})
     thr = b.get("pos_thr", 0.25)
     if policy_id in ("B0", "B1"):
@@ -121,6 +124,20 @@ def make_policy(policy_id: str, fusion_cfg: dict, primary_cam: str = "cam1", **a
         ev_kw = {k: v for k, v in ablation.items() if k in ("use_visibility", "temporal")}
         st_kw = {k: v for k, v in ablation.items() if k in ("allow_unknown",)}
         ev = EvidenceParams(**{**ev.__dict__, **ev_kw})
+        method = ablation.get("method", fusion_cfg["evidence"].get("method", "logodds"))
+        if method == "dempster_shafer":
+            ds = fusion_cfg["evidence"]["ds"]
+            st = StateParams(
+                **{
+                    **st.__dict__,
+                    "theta_obs": ds["theta_obs"],
+                    "theta_pos": ds["theta_pos"],
+                    "theta_neg": ds["theta_neg"],
+                    **st_kw,
+                }
+            )
+            acc = DSAccumulator(tau_s=ev.tau_s, temporal=ev.temporal)
+            return ProposedPolicy(acc, ComplianceStateMachine(st))
         st = StateParams(**{**st.__dict__, **st_kw})
         return ProposedPolicy.create(ev, st)
     raise ValueError(f"unknown policy {policy_id!r}")

@@ -33,11 +33,15 @@ def git_commit() -> str | None:
         return None
 
 
-def _parse_ablation(items: list[str]) -> dict[str, bool]:
-    out = {}
+def _parse_ablation(items: list[str]) -> dict[str, bool | str]:
+    out: dict[str, bool | str] = {}
     for it in items:
         k, _, v = it.partition("=")
-        out[k] = v.lower() in ("1", "true", "yes", "on")
+        low = v.lower()
+        if low in ("1", "true", "yes", "on", "0", "false", "no", "off"):
+            out[k] = low in ("1", "true", "yes", "on")
+        else:
+            out[k] = v
     return out
 
 
@@ -127,7 +131,7 @@ def main(argv: list[str] | None = None) -> None:
         "--ablation",
         nargs="*",
         default=[],
-        help="use_visibility=false temporal=false allow_unknown=false",
+        help="use_visibility=false temporal=false allow_unknown=false method=dempster_shafer",
     )
     args = ap.parse_args(argv)
     setup_logging()

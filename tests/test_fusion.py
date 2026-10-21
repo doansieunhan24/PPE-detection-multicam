@@ -99,3 +99,21 @@ def test_no_temporal_omega_matches_steady_state_scale():
     acc = EvidenceAccumulator(EvidenceParams(temporal=False, tau_s=2.0))
     _, omega = acc.update(0, [(0.9, 0.5)])
     assert omega == pytest.approx(1.0)
+
+
+def test_ds_combination_and_ignorance():
+    from src.fusion.dempster_shafer import DSAccumulator, cam_mass, combine
+
+    m = combine(cam_mass(0.95, 0.9), cam_mass(0.05, 0.1))
+    assert m[0] > m[1] and abs(sum(m) - 1) < 1e-9
+    acc = DSAccumulator()
+    score, obs = acc.update(0, [(0.05, 0.05)])
+    assert obs < 0.1  # low visibility → mostly ignorance
+
+
+def test_ds_policy_from_factory():
+    from src.fusion.policies import CamObs, make_policy
+
+    p = make_policy("P", load_config("fusion"), method="dempster_shafer")
+    states = [p.update(t, [CamObs("cam1", 0.9, 0.9, 0.9)]) for t in range(0, 2000, 40)]
+    assert states[-1] is CS.COMPLIANT

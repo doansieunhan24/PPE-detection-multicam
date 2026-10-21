@@ -43,6 +43,10 @@ evidence:
   theta_neg: -1.0             # TODO: tune
   initial_state: UNKNOWN
   method: logodds             # logodds | dempster_shafer
+  ds:                         # thresholds for the Dempster–Shafer variant (score, obs in [-1,1], [0,1])
+    theta_obs: 0.5
+    theta_pos: 0.3
+    theta_neg: -0.3
 
 alert:
   T_alert_s: 3.0
