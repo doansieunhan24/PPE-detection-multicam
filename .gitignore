@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# Secrets
+.env
+
+# Models & engines
+models/*
+!models/.gitkeep
+*.onnx
+*.engine
+*.pt
+
+# Data (raw, processed, annotations, jsonl)
+data/**
+!data/*/
+!data/*/.gitkeep
+
+# Generated reports
+eval/reports/*
+!eval/reports/.gitkeep
+
+# Runtime outputs
+alerts.db
+*.log
+runs/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ppe-multicam"
+version = "0.1.0"
+description = "Intelligent Safety Monitoring: multi-camera PPE + hazard analytics on DeepStream"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "opencv-python",
+    "pydantic>=2",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+offline = ["ultralytics"]
+serve = ["fastapi", "uvicorn", "pyzmq", "python-dotenv"]
+dev = [
+    "ppe-multicam[offline,serve]",
+    "pytest",
+    "ruff",
+]
+
+[tool.setuptools.packages.find]
+include = ["src*", "eval*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

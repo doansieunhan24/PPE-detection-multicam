@@ -1,0 +1,23 @@
+# One entry per camera. time_offset_ms comes from tools/sync_offsets.py.
+
+sync_tol_ms: 50
+
+cameras:
+  - cam_id: cam1
+    uri: rtsp://localhost:8554/cam1
+    fps: 25
+    resolution: [1920, 1080]
+    time_offset_ms: 0
+    calibration: configs/calibration/cam1.yaml
+  - cam_id: cam2
+    uri: rtsp://localhost:8554/cam2
+    fps: 25
+    resolution: [1920, 1080]
+    time_offset_ms: 0
+    calibration: configs/calibration/cam2.yaml
+  - cam_id: cam3
+    uri: rtsp://localhost:8554/cam3
+    fps: 25
+    resolution: [1920, 1080]
+    time_offset_ms: 0
+    calibration: configs/calibration/cam3.yaml

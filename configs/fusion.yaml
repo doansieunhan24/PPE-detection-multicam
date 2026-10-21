@@ -1,0 +1,33 @@
+# Visibility-aware evidence fusion (CLAUDE.md §7.3–7.5). Defaults; calibrate on val.
+
+parts:
+  head:  {item: helmet}
+  torso: {item: vest}
+  feet:  {item: boots}
+
+part_assign:
+  containment_min: 0.5        # inter area / PPE box area
+  p_neg: 0.05                 # p when no matching box — TODO: calibrate on val
+  held_helmet_wrist_dist: 0.15  # x person height
+  fallback_penalty: 0.5
+
+visibility:
+  h_ref_px: 32
+  use_blur: false
+  blur_beta: 100.0            # TODO(verify): tune on val
+  learned: false              # ablation: v_learned (logistic regression)
+
+evidence:
+  p_clip: [0.01, 0.99]
+  tau_s: 2.0
+  eps: 1.0e-6
+  theta_obs: 1.0              # TODO: tune
+  theta_pos: 1.0              # TODO: tune
+  theta_neg: -1.0             # TODO: tune
+  initial_state: UNKNOWN
+  method: logodds             # logodds | dempster_shafer
+
+alert:
+  T_alert_s: 3.0
+  T_unk_s: 30.0
+  T_cooldown_s: 60.0

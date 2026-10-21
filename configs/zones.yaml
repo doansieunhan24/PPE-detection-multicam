@@ -1,0 +1,16 @@
+# Zones on the floor map (metres). Draw with tools/draw_zones.py.
+# type: forbidden | risk | ppe_required
+
+association:
+  d_max_m: 0.8
+  vote_window_frames: 15
+
+zones:
+  - id: Z1
+    type: ppe_required
+    polygon_m: [[0, 0], [6, 0], [6, 8], [0, 8]]   # TODO: replace with real layout
+    required_ppe: [helmet, vest]
+  - id: Z2
+    type: forbidden
+    polygon_m: [[4, 6], [6, 6], [6, 8], [4, 8]]   # TODO: replace with real layout
+    required_ppe: [helmet, vest, boots]

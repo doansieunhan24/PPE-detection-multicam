@@ -1,0 +1,20 @@
+# Behavior thresholds (CLAUDE.md §7.7). TODO: tune on fall datasets / C2.
+
+fall:
+  method: rule                # rule | stgcn
+  aspect_ratio_min: 1.0       # bbox w/h — TODO(verify)
+  torso_angle_deg_min: 60     # TODO(verify)
+  hip_vy_min: 0.0             # TODO(verify)
+  seq_len: 45                 # frames, within 30–60
+  score_threshold: 0.5
+
+immobility:
+  kpt_disp_eps_px: 5.0        # TODO(verify)
+  T_immobile_s: 10.0          # TODO(verify)
+
+intrusion:
+  T_intr_s: 1.0
+
+crowd:
+  K: 4                        # TODO: set per scenario
+  T_s: 5.0

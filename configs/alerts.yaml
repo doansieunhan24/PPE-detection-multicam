@@ -1,0 +1,26 @@
+# Alert levels & delivery (CLAUDE.md §7.8). Telegram token lives in .env, never here.
+
+levels:
+  UNVERIFIABLE: 1
+  PPE_HELMET: 2
+  PPE_VEST: 2
+  PPE_BOOTS: 2
+  INTRUSION: 2
+  CROWD: 2
+  FALL: 3
+  IMMOBILE: 3
+
+cooldown_s: 60.0
+
+smart_record:
+  enabled: true
+  pre_s: 5
+  post_s: 10
+  out_dir: data/evidence
+
+store:
+  sqlite_path: data/alerts.db
+
+telegram:
+  enabled: false
+  min_level: 2
