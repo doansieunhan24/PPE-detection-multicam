@@ -21,3 +21,8 @@
 - **Lập luận quan trọng cho C2:** nhãn dataset ảnh đơn là "PPE nhìn thấy được" chứ không phải "PPE đang đeo" → không thể hiệu chỉnh/đánh giá tác động của che khuất bằng SH17/CHV; cần nhãn theo người, đa góc (C2).
 - Gán PPE theo part-ROI là nguồn mất recall lớn (−13…−19 điểm) nếu ROI hẹp; tune ROI trên val tăng recall head 0.78 → 0.90 (SH17 test) với FPR gần như không đổi.
 - Thêm CHV + pseudo-label các class thiếu: helmet AP50 trên CHV 0.890 → 0.957, vest 0.794 → 0.913.
+
+## Benchmark bán tổng hợp (2026-10-22) — điều cần nói trong thuyết minh
+- Có thể dùng làm thí nghiệm sơ bộ (chương phương pháp/thảo luận), ghi rõ giới hạn (che khuất nhân tạo).
+- B2 (OR) là đối thủ mạnh nhất về false alarm; cần thiết kế C2 để có trường hợp một camera cho bằng chứng *dương sai* (mũ người khác chồng ROI, vật giống mũ, cầm mũ sát đầu) — nơi OR thất bại còn P (trung bình có trọng số v) không.
+- Mục tiêu tune ngưỡng nên là FA/giờ ở recall cố định (đường cong FA/h–recall, §10.3-4), không phải J = DET − FA.

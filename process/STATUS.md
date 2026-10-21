@@ -11,6 +11,7 @@
 - Tools thu C2: calibrate_homography, sync_offsets, label_intervals
 - Phân tích visibility trên SH17/CHV: recall|worn và |log LR⁻| tăng theo v (hình trong `eval/reports/visibility/`)
 - Thí nghiệm 5: crop người tăng recall helmet +15 điểm so với full-frame (xác nhận D7)
+- Benchmark đa góc bán tổng hợp: single-cam bị che báo nhầm ~70 %; P ≫ B3/B4, ablation v/UNKNOWN có tác dụng; **B2 (OR) ngang P** → C2 cần kịch bản OR thất bại
 - 93 test pass, ruff sạch
 
 ## Đang dở

@@ -511,6 +511,7 @@ pytest -q && ruff check src eval tools
 ## 16. Câu hỏi mở (hỏi người dùng khi cần)
 
 - Hạn nộp chính xác? (phiếu giao đề chưa ghi ngày)
+- C2 cần thêm kịch bản khiến luật OR (B2) thất bại? (benchmark bán tổng hợp: B2 ngang P về false alarm) — đề xuất: 2 người đứng sát, một người đội mũ; vật giống mũ; cầm mũ sát đầu
 - Phần cứng: GPU dev là gì? Có Jetson Orin không?
 - Có quay được ở môi trường công nghiệp thật không, hay dựng kịch bản trong lab/xưởng trường?
 - GVHD muốn so sánh với "phương pháp hiện có" cụ thể nào (paper nào)? Hay chỉ cần B0–B4?

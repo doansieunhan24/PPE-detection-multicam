@@ -113,3 +113,28 @@
 
 - Tốc độ (PyTorch FP32, batch 64 crop 320, RTX 4060 Laptop): M2 2.75 ms/crop, M3 4.51 ms/crop (×1.64).
 - Quyết định: giữ **M2** mặc định (real-time đa cam, 8 GB); M3 tăng chủ yếu ở SH17 vest, không tăng trên CHV (miền công trường).
+
+### 2026-10-22 — Benchmark đa góc **bán tổng hợp** (trước C2) — `eval/semi_synthetic_multiview.py`
+- Mỗi ảnh SH17/CHV test → các "camera" giả: `orig`, `occ` (che vùng đầu, người vẫn phát hiện được), `far` (thu nhỏ ×4), `blur` (σ=6). Danh tính người theo GT; cảnh tĩnh 15 s ở 10 Hz; luật alert như hệ thống. Ngưỡng P được tune trên SH17+CHV **val** (J = DET − FA). Kết quả đầy đủ: `eval/reports/semi_synthetic/results.md`.
+- **Không thay thế C2**: che khuất là nhân tạo, GT là "PPE nhìn thấy" trên ảnh gốc.
+
+| Setup | Method | helmet FA | helmet DET | vest FA | vest DET |
+|---|---|---|---|---|---|
+| mixed (orig,occ,far) | B1@occ (single cam bị che) | **0.696** | 0.807 | 0.126 | 0.786 |
+| mixed | B2 OR | 0.048 | 0.862 | 0.061 | 0.868 |
+| mixed | B3 majority | 0.096 | 0.872 | 0.116 | 0.879 |
+| mixed | B4 conf-weighted | 0.157 | 0.883 | 0.109 | 0.879 |
+| mixed | P (config θ_obs=1, θ_neg=−0.5) | 0.046 | 0.686 | 0.089 | 0.725 |
+| mixed | P (tuned val: θ_obs=0.02, θ_neg=−1.5) | 0.061 | 0.826 | 0.061 | 0.845 |
+| degraded (occ,far,blur) | B2 OR | 0.124 | 0.853 | 0.082 | 0.849 |
+| degraded | B3 | 0.329 | 0.865 | 0.143 | 0.863 |
+| degraded | B4 | 0.451 | 0.871 | 0.147 | 0.862 |
+| degraded | P (tuned) | 0.159 | 0.817 | 0.078 | 0.829 |
+| degraded | P-no_v | 0.388 | 0.870 | 0.109 | 0.860 |
+| degraded | P-no_unknown | 0.296 | 0.861 | 0.143 | 0.852 |
+
+- Kết luận trung thực:
+  - Single-cam bị che đầu báo nhầm ~70 % người có đội mũ → vấn đề C1 là thật.
+  - Ablation: bỏ v ⇒ FA helmet 0.159 → 0.388; bỏ UNKNOWN ⇒ 0.296 → các thành phần của P có tác dụng; P ≫ B3, B4.
+  - **B2 (OR) mạnh ngang/hơn P** trên benchmark này (không có view nào báo nhầm "có mũ", nên OR không bị phạt). → Claim C1 phải chứng minh **so với B2** trên C2; C2 cần kịch bản OR thất bại (box mũ người bên cạnh lọt vào ROI, vật giống mũ, cầm mũ gần đầu).
+  - Ngưỡng tune nằm ở biên lưới và mục tiêu J không phạt abstention → **không** đưa vào config; tune lại trên C2.
