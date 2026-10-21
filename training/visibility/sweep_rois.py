@@ -26,7 +26,7 @@ from src.common.jsonl import read_frames
 from src.common.logging import get_logger, setup_logging
 from src.common.schemas import PartName
 from src.parts.part_rois import RoiParams, part_roi
-from src.parts.ppe_assign import containment
+from src.parts.ppe_assign import containment, exclusive_owners
 from training.ppe_detector.crops import parse_yolo_labels
 from training.ppe_detector.pseudo_label import iou
 from training.visibility.build_v_dataset import PARTS, gt_wears
@@ -69,19 +69,33 @@ def load_matched(frames_path: Path, ds: dict) -> list[tuple]:
         items = {it: [g.box for g in gt if g.cls in src] for it, src in item_src.items()}
         for r, c in zip(*linear_sum_assignment(-m), strict=True):
             if m[r, c] >= 0.5 and fr.persons[r].ppe_checked:
-                out.append((fr.persons[r], gpers[c], items))
+                out.append((fr.persons[r], gpers[c], items, fr.persons, r))
     return out
 
 
-def score(samples: list[tuple], part: PartName, prm: RoiParams, cmin: float) -> dict:
+def score(
+    samples: list[tuple], part: PartName, prm: RoiParams, cmin: float, exclusive: bool = False
+) -> dict:
     item, band = PARTS[part]
     c: Counter = Counter()
-    for p, gp, items in samples:
+    owners_cache: dict[int, list[set[int]]] = {}
+    for p, gp, items, frame_persons, idx in samples:
         if item not in items:
             continue
         y = gt_wears(gp, items[item], band)
         roi = part_roi(part, p.bbox, p.kpts, prm)
-        det = any(d.cls == item and containment(d.bbox, roi.box) >= cmin for d in p.ppe_dets)
+        ok = range(len(p.ppe_dets))
+        if exclusive:
+            key = id(frame_persons)
+            if key not in owners_cache:
+                rois = [part_roi(part, q.bbox, q.kpts, prm) for q in frame_persons]
+                owners_cache[key] = exclusive_owners(frame_persons, rois, item, cmin)
+            ok = owners_cache[key][idx]
+        det = any(
+            d.cls == item and containment(d.bbox, roi.box) >= cmin
+            for j, d in enumerate(p.ppe_dets)
+            if j in ok
+        )
         c[(y, det)] += 1
     worn, notw = c[(True, True)] + c[(True, False)], c[(False, True)] + c[(False, False)]
     rec = c[(True, True)] / worn if worn else 0.0

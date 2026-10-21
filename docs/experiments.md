@@ -7,8 +7,8 @@
 | Dataset | Link chính thức | License | Ghi chú |
 |---|---|---|---|
 | SH17 | https://github.com/ahmadmughees/SH17dataset · Kaggle `mugheesahmad/sh17-dataset-for-ppe-detection` | **CC BY-NC-SA 4.0** (README + Kaggle metadata, đã kiểm 2026-10-21); ảnh gốc từ Pexels → theo Pexels license | 17 class (sh17.yaml). Archive Kaggle 14.24 GB. Chỉ dùng phi thương mại (đồ án OK) |
-| SHWD | TODO(verify) | TODO(verify) | |
-| CHV | TODO(verify) | TODO(verify) | |
+| SHWD | https://github.com/njvisionpower/Safety-Helmet-Wearing-Dataset (Google Drive id 1qWm7rrwvjAWs1slymbrLaCf7Q-wnGLEX) | MIT (nhãn trên repo) | 7,581 ảnh VOC; `hat`=đầu có mũ, `person`=đầu không mũ; negatives phần lớn từ SCUT-HEAD. Chỉ dùng để eval |
+| CHV | https://github.com/ZijianWang-ZW/PPE_detection (Google Drive id 1fdGn67W0B7ShpBDbbQpUF0ScPQa4DR0a) | "open for free use", yêu cầu trích dẫn repo + bài Sensors 2021 | 1,330 ảnh; person, vest, 4 màu mũ |
 | Le2i | TODO(verify) | TODO(verify) | |
 | UR Fall | TODO(verify) | TODO(verify) | |
 | CAUCAFall | TODO(verify) | TODO(verify) | |
@@ -138,3 +138,17 @@
   - Ablation: bỏ v ⇒ FA helmet 0.159 → 0.388; bỏ UNKNOWN ⇒ 0.296 → các thành phần của P có tác dụng; P ≫ B3, B4.
   - **B2 (OR) mạnh ngang/hơn P** trên benchmark này (không có view nào báo nhầm "có mũ", nên OR không bị phạt). → Claim C1 phải chứng minh **so với B2** trên C2; C2 cần kịch bản OR thất bại (box mũ người bên cạnh lọt vào ROI, vật giống mũ, cầm mũ gần đầu).
   - Ngưỡng tune nằm ở biên lưới và mục tiêu J không phạt abstention → **không** đưa vào config; tune lại trên C2.
+
+### 2026-10-22 — SHWD (miền thứ ba) & gán PPE độc quyền
+- SHWD (VOC2028, MIT, 7,581 ảnh): box `hat` = **cả đầu + mũ** (khác `helmet` SH17/CHV chỉ phần mũ) → **không dùng để train** (định nghĩa box lệch, đa số crop là cận mặt). Dùng để **đánh giá có đội mũ hay không theo người** (`eval/shwd_helmet_eval.py`, chỉ ảnh có ≥1 `hat`).
+- M2, ROI đã tune, SHWD test: 1,492 người đội / 235 không; recall 0.940, FPR 0.264; recall theo v: 0.856 (v<0.2) → 0.972 (v≥0.8); AUC(v) 0.667 > person conf 0.607 → xu hướng visibility lặp lại ở miền thứ ba.
+- FPR tăng theo mức đông người (SH17 0.025, CHV 0.18, SHWD 0.26). Soi ảnh: lẫn (a) lỗi ghép đầu GT↔người trong đám đông (nhiễu đo) và (b) mũ người bên cạnh/phía sau lọt vào head ROI (lỗi thật; head_up_ratio=1.0 làm nặng thêm) — đúng kịch bản làm luật OR (B2) thất bại.
+- Thử **gán độc quyền** (`part_assign.exclusive`: một box PPE → một người, theo containment rồi khoảng cách tâm ROI):
+
+| Val | recall off→on | FPR off→on | J off→on |
+|---|---|---|---|
+| SHWD | 0.942→0.908 | 0.231→**0.174** | 0.711→**0.734** |
+| SH17 head | 0.912→0.877 | 0.025→0.024 | 0.887→0.853 |
+| CHV head | 0.983→0.967 | 0.250→0.250 | 0.733→0.717 |
+
+  Test cùng xu hướng (SHWD FPR 0.264→0.191, recall 0.940→0.895). → Đánh đổi; **mặc định tắt**, quyết định trên C2 theo độ đông thực tế.

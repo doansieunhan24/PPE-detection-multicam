@@ -29,7 +29,7 @@ from src.fusion.visibility import VisibilityParams, visibility
 from src.geometry.foot_point import foot_point
 from src.geometry.homography import CameraCalibration, point_in_polygon
 from src.parts.part_rois import RoiParams, part_roi
-from src.parts.ppe_assign import AssignParams, observe_part
+from src.parts.ppe_assign import AssignParams, exclusive_owners, observe_part
 
 NAN_XY = (math.nan, math.nan)
 
@@ -122,6 +122,18 @@ class PPEEngine:
             for p in fr.persons:
                 members.setdefault(gid_of[(cam, p.track_id)], []).append((cam, p, fr))
 
+        # exclusive PPE ownership per camera frame and part (crowds), computed once per step
+        allowed: dict[tuple[str, int, PartName], set[int]] = {}
+        if self.assign_prm.exclusive:
+            for cam, fr in group.items():
+                for part, spec in self.parts.items():
+                    rois = [part_roi(part, q.bbox, q.kpts, self.roi_prm) for q in fr.persons]
+                    owners = exclusive_owners(
+                        fr.persons, rois, spec["det_cls"], self.assign_prm.containment_min
+                    )
+                    for q, a in zip(fr.persons, owners, strict=True):
+                        allowed[(cam, q.track_id, part)] = a
+
         states, alerts = [], []
         for gid, mem in members.items():
             xys = [xy for cam, p, _ in mem if not math.isnan((xy := self._floor_xy(cam, p))[0])]
@@ -133,7 +145,13 @@ class PPEEngine:
                 obs, per_cam = [], {}
                 for cam, p, fr in mem:
                     roi = part_roi(part, p.bbox, p.kpts, self.roi_prm)
-                    ob = observe_part(p, roi, spec["det_cls"], self.assign_prm)
+                    ob = observe_part(
+                        p,
+                        roi,
+                        spec["det_cls"],
+                        self.assign_prm,
+                        allowed.get((cam, p.track_id, part)),
+                    )
                     if ob.p is None:
                         continue
                     others = [q.bbox for q in fr.persons if q.track_id != p.track_id]

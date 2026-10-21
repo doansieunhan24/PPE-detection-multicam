@@ -34,6 +34,14 @@ datasets:
     out_full: data/processed/chv_full_frame
     missing_classes: [shoes, head, foot]   # not annotated in CHV → pseudo-labelled
 
+  shwd:                                 # Safety Helmet Wearing Dataset (VOC2028), MIT license
+    root: data/external/VOC2028
+    # head boxes only: hat = head with helmet, person = head without; persons from the pose
+    # model (training/ppe_detector/prepare_shwd_person_crops.py)
+    splits: {train: ImageSets/Main/train.txt, val: ImageSets/Main/val.txt, test: ImageSets/Main/test.txt}
+    out_crops: data/processed/shwd_person_crops
+    missing_classes: [vest, shoes, foot]   # pseudo-labelled
+
 crops:
   min_keep_ratio: 0.6     # keep a PPE box if (inter with crop)/(box area) >= this
   val_ratio: 0.1          # carved from train when a dataset has no val list, split by image

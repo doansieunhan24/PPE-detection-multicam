@@ -20,6 +20,7 @@ class AssignParams:
     # per part {"a", "c", "d"}: logit p = a*logit(conf) + c if box else d (neutral prior);
     # None → p = raw detector conf, p_neg when no box
     calibration: Mapping[str, Mapping[str, float]] | None = None
+    exclusive: bool = False  # one PPE box → one person (exclusive_owners)
 
     @classmethod
     def from_config(cls, cfg: dict) -> AssignParams:
@@ -30,6 +31,7 @@ class AssignParams:
             p_neg=a["p_neg"],
             held_helmet_wrist_dist=a["held_helmet_wrist_dist"],
             calibration=load_p_calibration(path) if path else None,
+            exclusive=a.get("exclusive", False),
         )
 
 
@@ -76,17 +78,71 @@ def _near_wrist(box: BBox, kpts: Sequence[Keypoint], max_dist: float, conf_min: 
     )
 
 
+def _iou(a: BBox, b: BBox) -> float:
+    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    ua = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / ua if ua > 0 else 0.0
+
+
+def exclusive_owners(
+    persons: Sequence[PersonDet],
+    rois: Sequence[PartRoi],
+    item_cls: str,
+    containment_min: float,
+    same_object_iou: float = 0.5,
+) -> list[set[int]]:
+    """One physical PPE box belongs to one person (crowds: a neighbour's helmet must not count).
+
+    Crop detections of different persons that overlap (IoU >= same_object_iou) are the same
+    object; it is given to the person whose part ROI contains it most (ties: nearest ROI
+    centre). Returns, per person, the indices into person.ppe_dets they may use.
+    """
+    cands = []  # (person idx, det idx, det, containment, distance to roi centre)
+    for i, (p, roi) in enumerate(zip(persons, rois, strict=True)):
+        rcx, rcy = (roi.box[0] + roi.box[2]) / 2, (roi.box[1] + roi.box[3]) / 2
+        rs = max(roi.box[2] - roi.box[0], roi.box[3] - roi.box[1], 1.0)
+        for j, d in enumerate(p.ppe_dets):
+            if d.cls != item_cls:
+                continue
+            c = containment(d.bbox, roi.box)
+            if c >= containment_min:
+                dx = (d.bbox[0] + d.bbox[2]) / 2 - rcx
+                dy = (d.bbox[1] + d.bbox[3]) / 2 - rcy
+                cands.append((i, j, d, c, math.hypot(dx, dy) / rs))
+    allowed: list[set[int]] = [set() for _ in persons]
+    taken = [False] * len(cands)
+    for k in sorted(range(len(cands)), key=lambda k: (-cands[k][3], cands[k][4])):
+        if taken[k]:
+            continue
+        i, j, d, _, _ = cands[k]
+        allowed[i].add(j)
+        for m, other in enumerate(cands):  # same object seen from other persons' crops
+            if not taken[m] and other[0] != i and _iou(other[2].bbox, d.bbox) >= same_object_iou:
+                taken[m] = True
+        taken[k] = True
+    return allowed
+
+
 def observe_part(
-    person: PersonDet, roi: PartRoi, item_cls: str, prm: AssignParams = AssignParams()
+    person: PersonDet,
+    roi: PartRoi,
+    item_cls: str,
+    prm: AssignParams = AssignParams(),
+    allowed: set[int] | None = None,
 ) -> PartObservation:
-    """p for one part in one camera: best matching PPE box, else p_neg."""
+    """p for one part in one camera: best matching PPE box, else p_neg.
+    allowed: restrict to these indices of person.ppe_dets (see exclusive_owners)."""
     if not person.ppe_checked:
         return PartObservation(p=None)
     ph = person.bbox[3] - person.bbox[1]
     best: PPEDet | None = None
     held = False
-    for d in person.ppe_dets:
+    for j, d in enumerate(person.ppe_dets):
         if d.cls != item_cls:
+            continue
+        if allowed is not None and j not in allowed:
             continue
         inside = containment(d.bbox, roi.box) >= prm.containment_min
         if (

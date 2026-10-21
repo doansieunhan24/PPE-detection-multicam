@@ -135,3 +135,24 @@ def test_calibrated_assignment_uses_part_params():
         p, part_roi(PartName.HEAD, PERSON, p.kpts), "helmet", AssignParams(calibration=cal)
     )
     assert obs.p == pytest.approx(1 / (1 + 2.718281828**1.2))
+
+
+def test_exclusive_owner_gives_shared_helmet_to_one_person():
+    from src.parts.ppe_assign import exclusive_owners
+
+    helmet = PPEDet(cls="helmet", bbox=(138, 100, 162, 125), conf=0.8)
+    a = _person([helmet])  # helmet right on a's head
+    # b stands just in front-right; its (wide) head ROI also overlaps a's helmet a little
+    kb = [(x + 20, y + 15, c) for x, y, c in standing_kpts()]
+    b = PersonDet(
+        track_id=2,
+        bbox=(120, 115, 220, 515),
+        conf=0.9,
+        kpts=kb,
+        ppe_dets=[PPEDet(cls="helmet", bbox=(139, 101, 163, 126), conf=0.7)],
+    )
+    prm = RoiParams(head_expand=3.0)
+    rois = [part_roi(PartName.HEAD, p.bbox, p.kpts, prm) for p in (a, b)]
+    own = exclusive_owners([a, b], rois, "helmet", containment_min=0.2)
+    assert own == [{0}, set()]
+    assert observe_part(b, rois[1], "helmet", allowed=own[1]).matched is None

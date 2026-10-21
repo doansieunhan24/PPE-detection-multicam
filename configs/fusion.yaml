@@ -27,6 +27,7 @@ part_assign:
   p_calibration: configs/p_calibration.yaml
   held_helmet_wrist_dist: 0.15  # x person height
   fallback_penalty: 0.5
+  exclusive: false            # one PPE box → one person (crowds); decided on val, see experiments.md
 
 visibility:
   h_ref_px: 32
