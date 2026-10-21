@@ -5,6 +5,9 @@ association:
   d_max_m: 0.8
   vote_window_frames: 15
 
+# PPE required when the person has no floor position (uncalibrated) or is outside all zones
+default_required_ppe: [helmet, vest]
+
 zones:
   - id: Z1
     type: ppe_required
