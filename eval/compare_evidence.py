@@ -16,7 +16,10 @@ from pathlib import Path
 import numpy as np
 
 from src.analytics_runner import git_commit
+from src.common.logging import get_logger, setup_logging
 from training.visibility.calibrate import load
+
+log = get_logger(__name__)
 
 
 def summarize(d: dict[str, np.ndarray], part: str, v_split: float) -> dict:
@@ -45,6 +48,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--v-split", type=float, default=0.6)
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
+    setup_logging()
 
     tables = dict(t.split("=", 1) for t in args.table)
     res = {
