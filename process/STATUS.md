@@ -12,7 +12,9 @@
 - Phân tích visibility trên SH17/CHV: recall|worn và |log LR⁻| tăng theo v (hình trong `eval/reports/visibility/`)
 - Thí nghiệm 5: crop người tăng recall helmet +15 điểm so với full-frame (xác nhận D7)
 - Benchmark đa góc bán tổng hợp: single-cam bị che báo nhầm ~70 %; P ≫ B3/B4, ablation v/UNKNOWN có tác dụng; **B2 (OR) ngang P** → C2 cần kịch bản OR thất bại
-- 93 test pass, ruff sạch
+- P7: alert store SQLite, Telegram notifier (.env), dashboard FastAPI (floor map + alert + ack + clip), `tools/make_evidence.py` (clip bằng chứng offline)
+- SHWD: đánh giá có-đội-mũ miền thứ ba; tùy chọn gán PPE độc quyền (mặc định tắt)
+- 100 test pass, ruff sạch
 
 ## Đang dở
 - (không có) — thí nghiệm 5 (crop vs full-frame) và M3 đã xong, xem `docs/experiments.md`

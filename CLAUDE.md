@@ -426,7 +426,7 @@ else:                    state = state_{t−1}        # hysteresis
 | P8 | 12–14 | Ablation, sensitivity, FPS bench, (optional) Jetson Orin | Toàn bộ bảng/biểu đồ trong `eval/reports/` |
 | P9 | 14–16 | Viết thuyết minh, slide, video demo | — |
 
-**Trạng thái hiện tại:** đã có khung repo (schemas, config loader, JSONL I/O, configs mặc định, test). Tiếp theo: P0 (Docker DeepStream) song song P1 offline backend.
+**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (fusion, baselines, association, behavior rule-based, alert store/Telegram/dashboard, evidence clip offline). Chờ dữ liệu C2 (P4) và Docker/DeepStream (P0). Chi tiết: `process/STATUS.md`.
 
 ---
 

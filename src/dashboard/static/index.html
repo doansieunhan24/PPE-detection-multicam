@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Safety Monitoring</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1d2330; --muted:#6b7280; --line:#e5e7eb;
+          --ok:#2e9d5b; --bad:#d64545; --unk:#9aa3af; --zone:#2a6fdb; --forbid:#d64545; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12151b; --card:#1b1f27; --fg:#e6e8ec; --muted:#9aa3af; --line:#2b313c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.4 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  header { padding:12px 16px; border-bottom:1px solid var(--line); display:flex; gap:16px; align-items:center; }
+  header h1 { font-size:16px; margin:0; }
+  .legend span { margin-right:12px; color:var(--muted); }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:middle; }
+  main { display:grid; grid-template-columns: minmax(0,1fr) 380px; gap:16px; padding:16px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; }
+  svg { width:100%; height:auto; display:block; }
+  table { width:100%; border-collapse:collapse; }
+  td, th { padding:6px 4px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+  .L1 { color:var(--muted); } .L2 { color:#d98a1e; } .L3 { color:var(--bad); font-weight:600; }
+  button { font:inherit; padding:2px 8px; border:1px solid var(--line); background:transparent; color:var(--fg); border-radius:4px; cursor:pointer; }
+  .acked { opacity:.45; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Giám sát an toàn</h1>
+  <div class="legend">
+    <span><i class="dot" style="background:var(--ok)"></i>Đủ PPE</span>
+    <span><i class="dot" style="background:var(--bad)"></i>Vi phạm</span>
+    <span><i class="dot" style="background:var(--unk)"></i>Chưa xác định</span>
+  </div>
+  <span id="updated" style="margin-left:auto;color:var(--muted)"></span>
+</header>
+<main>
+  <section class="card"><svg id="map" viewBox="-1 -1 12 10"></svg></section>
+  <section class="card">
+    <table><thead><tr><th>Mức</th><th>Loại</th><th>Người</th><th>Lúc</th><th></th></tr></thead>
+    <tbody id="alerts"></tbody></table>
+  </section>
+</main>
+<script>
+const NS = "http://www.w3.org/2000/svg";
+const color = s => ({COMPLIANT:"var(--ok)", VIOLATION:"var(--bad)"}[s] || "var(--unk)");
+function worst(parts) {
+  const st = Object.values(parts || {}).map(p => p.state);
+  return st.includes("VIOLATION") ? "VIOLATION" : st.every(s => s === "COMPLIANT") && st.length ? "COMPLIANT" : "UNKNOWN";
+}
+function el(tag, attrs, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+async function draw() {
+  const [zones, people] = await Promise.all([fetch("/api/zones").then(r => r.json()), fetch("/api/state").then(r => r.json())]);
+  const svg = document.getElementById("map");
+  svg.replaceChildren();
+  const pts = zones.flatMap(z => z.polygon_m).concat(people.filter(p => p.floor_xy).map(p => p.floor_xy));
+  if (pts.length) {
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    const x0 = Math.min(...xs) - 1, y0 = Math.min(...ys) - 1;
+    svg.setAttribute("viewBox", `${x0} ${y0} ${Math.max(...xs) - x0 + 1} ${Math.max(...ys) - y0 + 1}`);
+  }
+  for (const z of zones) {
+    const c = z.type === "forbidden" ? "var(--forbid)" : "var(--zone)";
+    svg.append(el("polygon", {points: z.polygon_m.map(p => p.join(",")).join(" "), fill: c, "fill-opacity": .08, stroke: c, "stroke-width": .04}));
+    svg.append(el("text", {x: z.polygon_m[0][0] + .1, y: z.polygon_m[0][1] + .4, "font-size": .35, fill: c}, z.id));
+  }
+  for (const p of people.filter(p => p.floor_xy)) {
+    const [x, y] = p.floor_xy;
+    svg.append(el("circle", {cx: x, cy: y, r: .25, fill: color(worst(p.parts))}));
+    svg.append(el("text", {x: x + .32, y: y + .12, "font-size": .3, fill: "currentColor"}, `#${p.global_id}`));
+  }
+  document.getElementById("updated").textContent = `${people.length} người · ${new Date().toLocaleTimeString()}`;
+}
+async function listAlerts() {
+  const rows = await fetch("/api/alerts?limit=50").then(r => r.json());
+  const tb = document.getElementById("alerts");
+  tb.replaceChildren(...rows.map(a => {
+    const tr = document.createElement("tr");
+    if (a.acked) tr.className = "acked";
+    const clip = a.evidence && a.evidence.clip ? ` <a href="/evidence/${a.evidence.clip}">clip</a>` : "";
+    tr.innerHTML = `<td class="L${a.level}">L${a.level}</td><td>${a.type}${a.zone ? " · " + a.zone : ""}${clip}</td>` +
+      `<td>${a.global_id ?? "–"}</td><td>${new Date(a.t_raise_ms).toLocaleTimeString()}</td><td></td>`;
+    if (!a.acked) {
+      const b = document.createElement("button");
+      b.textContent = "Đã xử lý";
+      b.onclick = () => fetch(`/api/alerts/${a.alert_id}/ack`, {method: "POST"}).then(listAlerts);
+      tr.lastChild.append(b);
+    }
+    return tr;
+  }));
+}
+function tick() { draw().catch(console.error); listAlerts().catch(console.error); }
+tick(); setInterval(tick, 1000);
+</script>
+</body>
+</html>

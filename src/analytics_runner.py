@@ -15,6 +15,8 @@ import json
 import subprocess
 from pathlib import Path
 
+from src.alerts.notifier_telegram import TelegramNotifier
+from src.alerts.store import AlertStore
 from src.association.ground_plane import sync_groups
 from src.behavior.engine import BehaviorEngine
 from src.common.config import DEFAULT_CONFIG_DIR, load_config
@@ -61,6 +63,7 @@ def run(
     config_dir: Path,
     policy: str,
     ablation: dict[str, bool],
+    db: bool = False,
 ) -> dict:
     fusion_cfg = load_config("fusion", config_dir)
     zones_cfg = load_config("zones", config_dir)
@@ -79,6 +82,8 @@ def run(
         fusion_cfg, zones_cfg, calibs, policy, ablation, alerts_cfg.get("levels", {})
     )
     behavior = BehaviorEngine(behavior_cfg, zones_cfg, alerts_cfg.get("levels", {}))
+    store = AlertStore(alerts_cfg["store"]["sqlite_path"]) if db else None
+    notifier = TelegramNotifier.from_config(alerts_cfg) if db else None
 
     out_dir.mkdir(parents=True, exist_ok=True)
     n_groups = n_alerts = 0
@@ -99,6 +104,10 @@ def run(
                 fs.write(s.model_dump_json() + "\n")
             for a in alerts:
                 fa.write(a.model_dump_json() + "\n")
+                if store is not None:
+                    store.add(a)
+                if notifier is not None:
+                    notifier.send(a)
             for (cam, tid), gid in gid_of.items():
                 fg.write(
                     json.dumps({"ts_ms": ts, "cam_id": cam, "track_id": tid, "global_id": gid})
@@ -132,6 +141,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--out", required=True)
     ap.add_argument("--config", default=str(DEFAULT_CONFIG_DIR))
     ap.add_argument("--policy", default="P", choices=POLICY_IDS)
+    ap.add_argument("--db", action="store_true", help="also store alerts in SQLite (+Telegram)")
     ap.add_argument(
         "--ablation",
         nargs="*",
@@ -146,6 +156,7 @@ def main(argv: list[str] | None = None) -> None:
         Path(args.config),
         args.policy,
         _parse_ablation(args.ablation),
+        db=args.db,
     )
 
 
