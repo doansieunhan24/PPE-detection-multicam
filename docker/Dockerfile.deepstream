@@ -1,0 +1,16 @@
+# DeepStream perception container (CLAUDE.md §8, D4: perception only, metadata → JSONL).
+# TODO(verify): pick ONE DeepStream 7.x tag matching the host driver/CUDA and record it in the
+# Decision Log; check https://catalog.ngc.nvidia.com/orgs/nvidia/containers/deepstream
+ARG DS_TAG=7.1-triton-multiarch
+FROM nvcr.io/nvidia/deepstream:${DS_TAG}
+
+# Python bindings (pyds): TODO(verify) the install script name/location for the chosen tag
+# (recent images ship /opt/nvidia/deepstream/deepstream/user_deepstream_python_apps_install.sh).
+RUN /opt/nvidia/deepstream/deepstream/user_deepstream_python_apps_install.sh --version 1.2.0 || \
+    echo "TODO(verify): install pyds manually for this DeepStream version"
+
+# YOLO custom parsers (marcoslucianops/DeepStream-Yolo, DeepStream-Yolo-Pose) are built at
+# runtime against the container's DeepStream headers: see docker/README.md.
+RUN pip3 install --no-cache-dir pyyaml pydantic numpy
+
+WORKDIR /workspace

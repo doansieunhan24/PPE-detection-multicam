@@ -1,0 +1,28 @@
+# docker compose -f docker/docker-compose.yml up
+# Requires Docker with the NVIDIA container toolkit (on Windows: Docker Desktop + WSL2).
+services:
+  mediamtx:                       # RTSP server for simulated cameras (tools/rtsp_sim.sh)
+    image: bluenviron/mediamtx:latest   # TODO(verify): pin a version tag
+    ports: ["8554:8554"]
+
+  deepstream:
+    build: { context: .., dockerfile: docker/Dockerfile.deepstream }
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    volumes:
+      - ..:/workspace
+    network_mode: host
+    command: ["python3", "-m", "src.pipeline.ds_app", "--cameras", "configs/cameras.yaml",
+              "--out", "data/jsonl/live/"]
+    depends_on: [mediamtx]
+
+  dashboard:
+    image: python:3.12-slim
+    working_dir: /workspace
+    volumes: [..:/workspace]
+    ports: ["8000:8000"]
+    command: >
+      sh -c "pip install -q fastapi uvicorn pyyaml pydantic numpy opencv-python-headless scipy &&
+             python -m src.dashboard.app --results data/results/live --host 0.0.0.0"

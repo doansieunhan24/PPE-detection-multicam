@@ -14,7 +14,8 @@
 - Benchmark đa góc bán tổng hợp: single-cam bị che báo nhầm ~70 %; P ≫ B3/B4, ablation v/UNKNOWN có tác dụng; **B2 (OR) ngang P** → C2 cần kịch bản OR thất bại
 - P7: alert store SQLite, Telegram notifier (.env), dashboard FastAPI (floor map + alert + ack + clip), `tools/make_evidence.py` (clip bằng chứng offline)
 - SHWD: đánh giá có-đội-mũ miền thứ ba; tùy chọn gán PPE độc quyền (mặc định tắt)
-- 100 test pass, ruff sạch
+- P0 scaffolding (chưa chạy được — chưa có Docker): `tools/rtsp_sim.sh`, `docker/` (Dockerfile, compose, README), config nvinfer PGIE/SGIE, `src/pipeline/ds_app.py` (TODO(verify) metadata keypoint), `meta_export.py` (đã test)
+- 102 test pass, ruff sạch
 
 ## Đang dở
 - (không có) — thí nghiệm 5 (crop vs full-frame) và M3 đã xong, xem `docs/experiments.md`

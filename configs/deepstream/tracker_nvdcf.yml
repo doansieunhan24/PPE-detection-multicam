@@ -1,1 +1,3 @@
-# TODO(P1): copy from DeepStream samples config_tracker_NvDCF_perf.yml for the chosen DS version
+# TODO(verify): copy config_tracker_NvDCF_perf.yml from
+# /opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/ of the chosen DS version
+# (its schema changes between versions; do not hand-write it).

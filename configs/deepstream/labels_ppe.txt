@@ -1,1 +1,5 @@
-# TODO(P1/P2): see CLAUDE.md §8
+helmet
+vest
+shoes
+head
+foot

@@ -1,1 +1,31 @@
-# TODO(P1/P2): see CLAUDE.md §8
+# SGIE: PPE detector on person crops (CLAUDE.md D7). Classes: configs/deepstream/labels_ppe.txt
+# Parser from marcoslucianops/DeepStream-Yolo — TODO(verify) function/lib names for the version.
+[property]
+gpu-id=0
+gie-unique-id=2
+process-mode=2
+operate-on-gie-id=1
+operate-on-class-ids=0
+net-scale-factor=0.0039215697906911373
+model-color-format=0
+onnx-file=../../models/sh17chv_crop_y11s.onnx
+model-engine-file=../../models/sh17chv_crop_y11s.onnx_b16_gpu0_fp16.engine
+labelfile-path=labels_ppe.txt
+batch-size=16
+network-mode=2
+num-detected-classes=5
+network-type=0
+cluster-mode=2
+maintain-aspect-ratio=1
+symmetric-padding=1
+# persons smaller than the training crops' minimum are skipped (exported with ppe_checked=false);
+# must match configs/perception.yaml ppe.min_crop_w_px / min_crop_h_px
+input-object-min-width=24
+input-object-min-height=48
+parse-bbox-func-name=NvDsInferParseYolo
+custom-lib-path=/workspace/third_party/DeepStream-Yolo/nvdsinfer_custom_impl_Yolo/libnvdsinfer_custom_impl_Yolo.so
+
+[class-attrs-all]
+nms-iou-threshold=0.5
+pre-cluster-threshold=0.25
+topk=50

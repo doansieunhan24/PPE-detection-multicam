@@ -1,1 +1,26 @@
-# TODO(P1/P2): see CLAUDE.md §8
+# PGIE: YOLO-pose (person bbox + 17 keypoints), CLAUDE.md D6 / §8.
+# Parser + engine from marcoslucianops/DeepStream-Yolo-Pose — TODO(verify) every path/function
+# name against that repo's config_infer_primary_yolo*_pose.txt for the chosen version, and
+# where it stores keypoints (mask_params vs user meta) before writing the probe.
+[property]
+gpu-id=0
+gie-unique-id=1
+net-scale-factor=0.0039215697906911373
+model-color-format=0
+onnx-file=../../models/yolo11m-pose.onnx
+model-engine-file=../../models/yolo11m-pose.onnx_b3_gpu0_fp16.engine
+batch-size=3
+network-mode=2
+num-detected-classes=1
+interval=0
+network-type=3
+cluster-mode=4
+maintain-aspect-ratio=1
+symmetric-padding=1
+parse-bbox-instance-mask-func-name=NvDsInferParseYoloPose
+custom-lib-path=/workspace/third_party/DeepStream-Yolo-Pose/nvdsinfer_custom_impl_Yolo_pose/libnvdsinfer_custom_impl_Yolo_pose.so
+output-instance-mask=1
+
+[class-attrs-all]
+pre-cluster-threshold=0.25
+topk=300
