@@ -176,7 +176,8 @@ def evaluate(
                 fp += same_pred and not same_gt
                 fn += same_gt and not same_pred
 
-        n_true = sum(1 for p in persons_gt if p["boxes"])
+        # people visible in at least one of the evaluated cameras
+        n_true = sum(1 for p in persons_gt if set(p["boxes"]) & set(kept))
         per_cam = [len(fr.persons) for fr in kept.values()]
         cnt_gt.append(n_true)
         cnt_err.append(len(set(gid_of.values())) - n_true)
