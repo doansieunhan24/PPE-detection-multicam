@@ -1,34 +1,33 @@
-# STATUS — cập nhật lần cuối 2026-10-22 (s03)
+# STATUS — cập nhật lần cuối 2026-10-22 (s04)
 
-**Phase hiện tại:** P2 xong (PPE detector), phần lớn code P5/P6 xong và test được. **TẠM DỪNG theo yêu cầu người dùng — chưa quay được dữ liệu C2.**
+**Phase hiện tại:** P2 xong (PPE detector). Phần lớn code P5–P7 xong và test được. Association đã kiểm chứng trên WILDTRACK. **Chờ dữ liệu C2 (P4) và DeepStream (P0).**
 
 ## Đã xong
 - P1 offline backend (YOLO11m-pose@960 + ByteTrack → JSONL) + replay
-- **PPE detector M2** (YOLO11s@320, SH17+CHV person crops): CHV test helmet AP50 0.957, vest 0.913 → `models/sh17chv_crop_y11s.{pt,onnx}`
-- C1 core: part ROI (tune trên val), gán PPE, visibility, evidence (dt-weighted), state machine, Dempster–Shafer, B0–B4, alert rules
-- Association đa cam (homography, Hungarian, global ID), behavior rule-based (fall đa góc, immobility, intrusion, crowd)
-- Eval: event metrics, `run_baselines` (bảng chính + ablation), `eval_detector`, `compare_evidence`
-- Tools thu C2: calibrate_homography, sync_offsets, label_intervals
-- Phân tích visibility trên SH17/CHV: recall|worn và |log LR⁻| tăng theo v (hình trong `eval/reports/visibility/`)
-- Thí nghiệm 5: crop người tăng recall helmet +15 điểm so với full-frame (xác nhận D7)
-- Benchmark đa góc bán tổng hợp: single-cam bị che báo nhầm ~70 %; P ≫ B3/B4, ablation v/UNKNOWN có tác dụng; **B2 (OR) ngang P** → C2 cần kịch bản OR thất bại
-- P7: alert store SQLite, Telegram notifier (.env), dashboard FastAPI (floor map + alert + ack + clip), `tools/make_evidence.py` (clip bằng chứng offline)
-- SHWD: đánh giá có-đội-mũ miền thứ ba; tùy chọn gán PPE độc quyền (mặc định tắt)
-- P0 scaffolding (chưa chạy được — chưa có Docker): `tools/rtsp_sim.sh`, `docker/` (Dockerfile, compose, README), config nvinfer PGIE/SGIE, `src/pipeline/ds_app.py` (TODO(verify) metadata keypoint), `meta_export.py` (đã test)
-- 102 test pass, ruff sạch
+- **PPE detector M2** (YOLO11s@320, SH17+CHV person crops): CHV test helmet AP50 0.957, vest 0.913
+- C1 core: part ROI, gán PPE, visibility, evidence (dt-weighted), state machine, Dempster–Shafer, B0–B4, alert rules
+- Association đa cam (homography, Hungarian, global ID), behavior rule-based, alerts/dashboard/Telegram (P7)
+- Eval: event metrics, `run_baselines`, `eval_detector`, `compare_evidence`, benchmark bán tổng hợp, SHWD
+- **Association trên WILDTRACK** (`eval/eval_association.py`, `tools/wildtrack_*.py`):
+  - Oracle: pairwise F1 0.982, IDF1 0.952.
+  - YOLO11m-pose: F1 0.784, count MAE 3.35.
+  - Foot point đáy bbox giảm sai số sàn 0.68 → 0.23 m so với ankle.
+- P0 scaffolding (chưa chạy được vì chưa có Docker)
+- 107 test pass, ruff sạch
 
 ## Đang dở
-- (không có) — thí nghiệm 5 (crop vs full-frame) và M3 đã xong, xem `docs/experiments.md`
+- (không có)
 
 ## Blocker / chờ người dùng
-- **Xác nhận** các thay đổi công thức: dt_weighting (§7.5), p calibration + theta_neg −0.5 (Decision Log)
+- **Xác nhận** dt_weighting (§7.5), p calibration + theta_neg −0.5, **foot_point = bbox_bottom (§7.1)**
 - Thu dữ liệu C2 (3 cam), trả lời câu hỏi mở §16
 - Docker + DeepStream (P0) chưa cài
+- License WILDTRACK: TODO(verify)
 
 ## Ưu tiên tiếp theo
-1. Có C2 → `calibrate_homography`, `sync_offsets`, `ultralytics_runner`, `label_intervals`, `run_baselines --ablations`
-2. Tune θ_obs/θ_pos/θ_neg, τ, T_alert trên C2 val
+1. Có C2: chạy `calibrate_homography`, `sync_offsets`, `ultralytics_runner`, `label_intervals`, `run_baselines --ablations`, `eval_association`
+2. Tune θ_obs/θ_pos/θ_neg, τ, T_alert, d_max trên C2 val
 3. P0 DeepStream
 
 ## Session gần nhất
-- [2026-10-22_s03.md](2026-10-22_s03.md) (tạm dừng); việc lớn gần nhất: [2026-10-21_s02.md](2026-10-21_s02.md)
+- [2026-10-22_s04.md](2026-10-22_s04.md)

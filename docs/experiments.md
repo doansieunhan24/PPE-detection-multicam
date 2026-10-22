@@ -152,3 +152,41 @@
 | CHV head | 0.983→0.967 | 0.250→0.250 | 0.733→0.717 |
 
   Test cùng xu hướng (SHWD FPR 0.264→0.191, recall 0.940→0.895). → Đánh đổi; **mặc định tắt**, quyết định trên C2 theo độ đông thực tế.
+
+### 2026-10-22 — Association đa cam trên **WILDTRACK** (dữ liệu thật, trước C2) — `eval/eval_association.py`
+- **Dataset:** WILDTRACK (EPFL CVLab; Chavdarova et al., arXiv 1707.09299). 7 cam tĩnh, 1920×1080, 400 frame có nhãn (2 fps), khoảng 24 người/frame, 42,721 box GT (đếm từ `annotations_positions`). Link chính thức `documents.epfl.ch/.../Wildtrack_dataset_full.zip` bị reset kết nối từ mạng này nên tải bản mirror `huggingface.co/datasets/disl/my_dataset` (`Wildtrack_dataset_full/`; README trùng README gốc). **License: trang EPFL không ghi, TODO(verify).** Mirror khác (ShantyCam) ghi "CC-BY (research)", chưa xác minh.
+- **Chuẩn bị** (`tools/wildtrack_prepare.py`): `H = diag(0.01,0.01,1)·inv(K·[r1 r2 t])` (thế giới tính bằng cm, mặt phẳng z=0). FOV polygon lấy hình học: bao lồi các điểm lưới sàn chiếu vào trong ảnh, không dùng GT. ROI eval là lưới 12×36 m (`--roi -3 -9 9 27`).
+- **Kiểm tra calibration:** chiếu điểm giữa đáy box GT xuống sàn rồi so với vị trí GT, RMS từng cam 0.073–0.153 m, median 0.070–0.120 m.
+- **Detector:** `yolo11m-pose@960` + ByteTrack (`tools/wildtrack_detect.py`). Tracker chạy ở **2 fps** nên IDF1 thời gian bị bi quan. Recall detection (IoU ≥ 0.5) đạt 0.436 trên 7 cam (C1: 0.317), precision 0.818. WILDTRACK có đám đông dày và người ở xa.
+- Commit `9459826`. Report: `eval/reports/association/wildtrack_*.json`.
+
+**Chẩn đoán và sửa (oracle = box GT + track ID GT):**
+1. **FOV gate quá chặt:** trong 83,957 cặp cùng người, 2,443 cặp ở gần nhau nhưng bị loại vì điểm chân nằm ngay ngoài FOV polygon của cam kia (người bị cắt ở mép ảnh). Đã thêm `association.fov_margin_m`. Với d_max 0.8: margin 0 → 0.5 m nâng pairwise recall 0.940 → 0.973, count MAE 3.12 → 1.09.
+2. **Điểm chân từ ankle bị lệch:** ankle cao hơn sàn khoảng 8–10 cm, nên khi chiếu bằng homography mặt sàn sẽ bị đẩy ra xa khoảng `h·dist/cam_height`. Trên 18,773 detection khớp GT (không bị cắt đáy), sai số median theo từng rule: trung điểm ankle 0.681 m (p90 1.327), ankle + 0.04h 0.321, **đáy bbox 0.230 m (p90 0.623)**, x lấy từ ankle + y lấy từ đáy bbox 0.231. Đã thêm `association.foot_point: bbox_bottom` (**thay đổi §7.1, chờ xác nhận**).
+
+**Kết quả (cấu hình mặc định: d_max 0.8, fov_margin 0.5, foot bbox_bottom, 7 cam):**
+
+| Input | floor err median | pair P | pair R | pair F1 | IDF1 | IDF1 assoc-only | count MAE (bias) | MAE không association: sum / max |
+|---|---|---|---|---|---|---|---|---|
+| Oracle (box GT) | 0.089 m | 0.991 | 0.973 | 0.982 | 0.952 | 0.958 | 1.09 (+0.98) | 81.72 / 0.44 |
+| YOLO11m-pose, foot = ankles (rule cũ) | 0.662 m | 0.395 | 0.344 | 0.367 | 0.230 | 0.407 | 8.26 (+8.06)¹ | 30.35 / 12.28 |
+| YOLO11m-pose, foot = bbox_bottom | 0.228 m | 0.725 | 0.854 | 0.784 | 0.348 | 0.613 | 3.35 (+2.34) | 33.07 / 11.73 |
+
+¹ Dòng ankles lấy từ sweep `wildtrack_yolo11m_sweep.json` (d_max 0.8, fov_margin 1.0).
+
+- **Sweep d_max (detector, bbox_bottom, margin 0.5):** d_max 0.5 cho F1 0.804 nhưng count MAE 4.34; d_max 0.8 cho F1 0.784 và count MAE 3.35. d_max ≥ 1.0 làm F1 giảm (1.5: 0.61–0.66). Giữ 0.8 và tune lại trên C2.
+- **Theo số cam** (`wildtrack_*_cams_*.json`, chạy detector):
+
+| Cam | pair F1 | count MAE (bias) | det recall |
+|---|---|---|---|
+| C1 | — | 14.46 (−14.46) | 0.317 |
+| C1, C3 | 0.763 | 11.47 (−11.47) | 0.376 |
+| C1, C3, C5 | 0.791 | 10.30 (−10.29) | 0.435 |
+| 7 cam | 0.784 | 3.35 (+2.34) | 0.436 |
+
+  Với oracle: C1 có count MAE 0.30, C1+C3 có 0.77, ba cam có 0.64, 7 cam có 1.09. Như vậy với detector thật, sai số đếm do **bỏ sót detection** chi phối, không phải do association.
+- **Kết luận:**
+  - Association trên mặt sàn đúng khi vị trí chân đúng: oracle đạt pairwise F1 0.98.
+  - Với detector thật, nút thắt là (a) sai số điểm chân trên sàn và (b) recall detection trong đám đông.
+  - IDF1 thấp (0.35) một phần vì tracker chỉ chạy 2 fps trên WILDTRACK.
+  - Baseline "max theo cam" đếm tốt trên WILDTRACK chỉ vì C6/C1 nhìn gần hết quảng trường, nên **không tổng quát** cho bố trí FOV chồng một phần.

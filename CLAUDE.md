@@ -355,6 +355,7 @@ else:                    state = state_{t−1}        # hysteresis
 | Train PPE detector | **SH17** (17 class: person, head, helmet, safety-vest, shoes, foot, gloves, ...) | Tạo **tập crop người** (`prepare_sh17_person_crops.py`) cho khớp với phân phối input của SGIE. Lưu ý: class "shoes" **không phân biệt giày bảo hộ với giày thường**, phải ghi rõ ở phần Limitations. |
 | Bổ sung helmet | SHWD, CHV | Merge class cẩn thận (map tên class). |
 | **Đã có (2026-10-21)** | SH17: 8,099 ảnh / 75,994 instance (khớp README), chỉ 927 helmet + 530 safety-vest. CHV: 1,330 ảnh, person/vest/4 màu mũ (3,887 person, 1,784 vest, 3,538 helmet), không nhãn head/shoes/foot → pseudo-label bằng model SH17 (chỉ train/val) | Chi tiết số crop/instance: `data/processed/*/stats.json`, `docs/experiments.md` |
+| Association (đa cam, public) | **WILDTRACK** (EPFL, 7 cam, 400 frame có nhãn @2 fps) | Chỉ để eval association. License TODO(verify). Tải từ mirror HF vì link EPFL bị reset |
 | Fall (đơn góc) | Le2i, UR Fall, CAUCAFall | Train/eval module fall. |
 | Fall (đa góc) | Multiple Cameras Fall Dataset (Univ. Montréal, 8 cam) | Đánh giá fusion fall đa camera. |
 | **Đánh giá C1** | **Bộ tự thu (C2)** | Chỉ dùng để **eval** (hoặc chia theo session), **không train detector trên bộ này**. |
@@ -426,7 +427,7 @@ else:                    state = state_{t−1}        # hysteresis
 | P8 | 12–14 | Ablation, sensitivity, FPS bench, (optional) Jetson Orin | Toàn bộ bảng/biểu đồ trong `eval/reports/` |
 | P9 | 14–16 | Viết thuyết minh, slide, video demo | — |
 
-**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (fusion, baselines, association, behavior rule-based, alert store/Telegram/dashboard, evidence clip offline). Chờ dữ liệu C2 (P4) và Docker/DeepStream (P0). Chi tiết: `process/STATUS.md`.
+**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (association đã kiểm chứng trên WILDTRACK) (fusion, baselines, association, behavior rule-based, alert store/Telegram/dashboard, evidence clip offline). Chờ dữ liệu C2 (P4) và Docker/DeepStream (P0). Chi tiết: `process/STATUS.md`.
 
 ---
 
@@ -504,6 +505,9 @@ pytest -q && ruff check src eval tools
 | 2026-10-22 | Detector chính = M2 (SH17+CHV crops, YOLO11s@320) `models/sh17chv_crop_y11s` | CHV test helmet AP50 0.957, vest 0.913 (M1: 0.890 / 0.794) |
 | 2026-10-22 | Part-ROI/containment tune trên val SH17+CHV (containment 0.2, head_up 1.0, head_expand 1.8, torso_expand 0.4, feet 0.12/0.1); hiệu chỉnh p chỉ trên v ≥ 0.6 | Tăng recall gán PPE 12–23 điểm trên test; GT ảnh đơn bị điều kiện theo visibility nên không fit được tác động của v |
 | 2026-10-22 | Giữ M2 (YOLO11s) thay vì M3 (YOLO11m) | M3 +2 điểm mAP50 SH17 nhưng ngang trên CHV, chậm ×1.64 |
+| 2026-10-22 | Association eval trên **WILDTRACK** (`eval/eval_association.py`, `tools/wildtrack_*.py`); tách `src/association/associator.py` dùng chung cho engine và eval | Có số liệu association trên dữ liệu đa cam thật trước C2 |
+| 2026-10-22 | `association.fov_margin_m = 0.5`: FOV gate có dung sai quanh polygon | Người bị cắt ở mép ảnh có điểm chân nằm ngay ngoài FOV. WILDTRACK oracle: pairwise recall 0.940 → 0.973 |
+| 2026-10-22 | **§7.1 foot point = đáy bbox** (`association.foot_point: bbox_bottom`, có thể đổi lại `ankles`). **Chờ người dùng xác nhận** | Ankle cao hơn sàn khoảng 8–10 cm, homography đẩy điểm ra xa. WILDTRACK: sai số sàn median 0.68 m (ankle) → 0.23 m (bbox), pairwise F1 0.37 → 0.78 |
 | — | Số cam / loại cam / có Jetson Orin không: `TODO` | |
 
 ---
@@ -522,6 +526,7 @@ pytest -q && ruff check src eval tools
 ## 17. Limitations (ghi sẵn để không quên đưa vào thuyết minh)
 
 - Ground-plane association giả định mặt sàn phẳng và các cam có vùng nhìn chung. Sai khi người bị che chân hoặc đứng trên bậc, giàn.
+- Association phụ thuộc recall detection: trong đám đông dày (WILDTRACK) YOLO-pose chỉ bắt được khoảng 44 % box GT, nên đếm người bị thiếu.
 - Không phân biệt được giày bảo hộ với giày thường ở khoảng cách xa (giới hạn của dataset SH17).
 - Dữ liệu té ngã là té giả, có thể khác té thật.
 - Bộ tự thu có quy mô nhỏ, chưa phải môi trường công nghiệp thật (nếu đúng như vậy).

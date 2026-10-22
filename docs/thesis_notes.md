@@ -26,3 +26,10 @@
 - Có thể dùng làm thí nghiệm sơ bộ (chương phương pháp/thảo luận), ghi rõ giới hạn (che khuất nhân tạo).
 - B2 (OR) là đối thủ mạnh nhất về false alarm; cần thiết kế C2 để có trường hợp một camera cho bằng chứng *dương sai* (mũ người khác chồng ROI, vật giống mũ, cầm mũ sát đầu) — nơi OR thất bại còn P (trung bình có trọng số v) không.
 - Mục tiêu tune ngưỡng nên là FA/giờ ở recall cố định (đường cong FA/h–recall, §10.3-4), không phải J = DET − FA.
+
+## Association trên WILDTRACK (2026-10-22)
+- Kiểm chứng ground-plane association (D3) trên dữ liệu đa cam **thật** trước khi có C2. Với box GT: pairwise F1 0.98, IDF1 0.95. Với YOLO11m-pose: F1 0.78 (`docs/experiments.md`).
+- **Phát hiện đáng viết vào thuyết minh:** điểm chân lấy từ ankle keypoint (cách làm hay gặp) bị lệch vì ankle cao hơn sàn. Homography mặt sàn khuếch đại sai lệch này theo `h·dist/cam_height`. Đáy bbox giảm sai số median 0.68 → 0.23 m. Nên có một hình minh hoạ tia chiếu và một bảng so sánh các biến thể foot point.
+- Thêm dung sai mép FOV (người bị cắt ở mép ảnh) giúp tăng recall ghép cặp.
+- Thí nghiệm số cam: với detector thật, đếm người bị chi phối bởi recall detection. Đây là lý do nên dùng nhiều cam cho crowd counting (§7.7).
+- Giới hạn: WILDTRACK là quảng trường ngoài trời, cam xa (> 10 m) và đông người, khác bố trí xưởng 6×8 m của C2. Tracker chạy 2 fps.
