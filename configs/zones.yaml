@@ -4,6 +4,13 @@
 association:
   d_max_m: 0.8
   vote_window_frames: 15
+  # Tolerance around each camera's fov_floor_polygon_m when gating a pair match: people cut by
+  # the image edge have their foot point just outside the polygon. WILDTRACK oracle sweep:
+  # 0 → 0.5 m raises pairwise recall 0.94 → 0.97 (d_max 0.8). Retune on C2.
+  fov_margin_m: 0.5
+  # bbox_bottom | ankles. Ankles are above the floor → biased floor point (§7.1 change,
+  # pending user confirmation). WILDTRACK median floor error 0.23 m vs 0.68 m.
+  foot_point: bbox_bottom
 
 # PPE required when the person has no floor position (uncalibrated) or is outside all zones
 default_required_ppe: [helmet, vest]

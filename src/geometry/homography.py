@@ -29,9 +29,13 @@ class CameraCalibration:
             raise ValueError(f"{self.cam_id}: not calibrated")
         return apply_homography(self.H, pts_px)
 
-    def sees(self, pt_m: Point) -> bool:
-        """Inside this camera's floor FOV (no polygon set → assume yes)."""
-        return not self.fov_floor_polygon_m or point_in_polygon(pt_m, self.fov_floor_polygon_m)
+    def sees(self, pt_m: Point, margin_m: float = 0.0) -> bool:
+        """Inside this camera's floor FOV, or within margin_m of its border (people cut by the
+        image edge still have a foot point just outside it). No polygon set → assume yes."""
+        poly = self.fov_floor_polygon_m
+        if not poly or point_in_polygon(pt_m, poly):
+            return True
+        return margin_m > 0 and polygon_distance(pt_m, poly) <= margin_m
 
 
 def load_calibration(path: str | Path) -> CameraCalibration:
@@ -65,6 +69,16 @@ def fit_homography(img_pts: np.ndarray, floor_pts: np.ndarray) -> tuple[np.ndarr
         raise ValueError("homography estimation failed")
     err = np.linalg.norm(apply_homography(H, img_pts) - floor_pts, axis=1)
     return H, float(np.sqrt(np.mean(err**2)))
+
+
+def polygon_distance(pt: Point, poly: Sequence[Point]) -> float:
+    """Distance from pt to the polygon boundary."""
+    p = np.asarray(pt, dtype=np.float64)
+    a = np.asarray(poly, dtype=np.float64)
+    b = np.roll(a, -1, axis=0)
+    ab = b - a
+    t = np.clip(((p - a) * ab).sum(1) / np.maximum((ab**2).sum(1), 1e-12), 0.0, 1.0)
+    return float(np.min(np.linalg.norm(a + t[:, None] * ab - p, axis=1)))
 
 
 def point_in_polygon(pt: Point, poly: Sequence[Point]) -> bool:

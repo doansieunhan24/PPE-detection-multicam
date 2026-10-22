@@ -11,6 +11,7 @@ from src.geometry.homography import (
     fit_homography,
     load_calibration,
     point_in_polygon,
+    polygon_distance,
 )
 
 
@@ -31,6 +32,16 @@ def test_point_in_polygon():
     assert not point_in_polygon((5, 2), sq)
 
 
+def test_polygon_distance_and_fov_margin():
+    sq = [(0, 0), (4, 0), (4, 4), (0, 4)]
+    assert polygon_distance((5, 2), sq) == pytest.approx(1.0)
+    assert polygon_distance((2, 1), sq) == pytest.approx(1.0)
+    cal = CameraCalibration("c", np.eye(3), fov_floor_polygon_m=sq)
+    assert not cal.sees((4.4, 2))
+    assert cal.sees((4.4, 2), margin_m=0.5)
+    assert not cal.sees((5.0, 2), margin_m=0.5)
+
+
 def test_uncalibrated_placeholder_loads():
     cal = load_calibration("configs/calibration/cam1.yaml")
     assert not cal.calibrated and cal.sees((100.0, 100.0))
@@ -47,6 +58,10 @@ def test_foot_point_ankles_vs_bbox():
     assert fp.from_ankles and (fp.x_px, fp.y_px) == (100.0, 491.0)
     fp = foot_point(_person((50, 100, 150, 500), truncated=True))
     assert not fp.from_ankles and not fp.reliable and fp.y_px == 500
+    fp = foot_point(_person((50, 100, 150, 500), k), source="bbox_bottom")
+    assert not fp.from_ankles and (fp.x_px, fp.y_px) == (100.0, 500.0)
+    with pytest.raises(ValueError):
+        foot_point(_person((50, 100, 150, 500), k), source="knees")
 
 
 def _frame(cam, ts):

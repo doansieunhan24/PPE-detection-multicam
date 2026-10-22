@@ -13,8 +13,8 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from src.alerts.ppe_rules import PPEAlertParams, PPEAlertTracker
-from src.association.global_id import GlobalIdManager
-from src.association.ground_plane import FloorObs, PersonKey, cluster
+from src.association.associator import Associator
+from src.association.ground_plane import PersonKey
 from src.common.schemas import (
     AlertEvent,
     CamEvidence,
@@ -26,12 +26,9 @@ from src.common.schemas import (
 )
 from src.fusion.policies import CamObs, Policy, make_policy
 from src.fusion.visibility import VisibilityParams, visibility
-from src.geometry.foot_point import foot_point
 from src.geometry.homography import CameraCalibration, point_in_polygon
 from src.parts.part_rois import RoiParams, part_roi
 from src.parts.ppe_assign import AssignParams, exclusive_owners, observe_part
-
-NAN_XY = (math.nan, math.nan)
 
 
 @dataclass
@@ -59,11 +56,7 @@ class PPEEngine:
         # v_learned only changes visibility; the policy must not receive it
         self.ablation = {k: v for k, v in self.ablation.items() if k != "v_learned"}
         self.parts = {PartName(k): v for k, v in f["parts"].items()}
-        assoc = self.zones_cfg.get("association", {})
-        self.d_max_m = assoc.get("d_max_m", 0.8)
-        self.gids = GlobalIdManager(
-            window=assoc.get("vote_window_frames", 15), reuse_dist_m=self.d_max_m
-        )
+        self.assoc = Associator.from_config(self.zones_cfg, self.calibs)
         self.zones = [
             Zone(z["id"], z["type"], [tuple(p) for p in z["polygon_m"]], z.get("required_ppe", []))
             for z in self.zones_cfg.get("zones", [])
@@ -76,14 +69,6 @@ class PPEEngine:
         )
 
     # --- helpers ------------------------------------------------------------------------
-
-    def _floor_xy(self, cam: str, p: PersonDet) -> tuple[float, float]:
-        cal = self.calibs.get(cam)
-        if cal is None or not cal.calibrated:
-            return NAN_XY
-        fp = foot_point(p)
-        x, y = cal.to_floor(np.array([[fp.x_px, fp.y_px]]))[0]
-        return float(x), float(y)
 
     def _zone_of(self, xy: tuple[float, float]) -> Zone | None:
         if math.isnan(xy[0]):
@@ -98,20 +83,11 @@ class PPEEngine:
 
     # --- main ---------------------------------------------------------------------------
 
+    def _floor_xy(self, cam: str, p: PersonDet) -> tuple[float, float]:
+        return self.assoc.floor_xy(cam, p)
+
     def associate(self, group: Mapping[str, PerceptionFrame], ts_ms: int) -> dict[PersonKey, int]:
-        located: dict[str, list[FloorObs]] = {}
-        singles: list[list[FloorObs]] = []
-        for cam, fr in group.items():
-            for p in fr.persons:
-                xy = self._floor_xy(cam, p)
-                o = FloorObs((cam, p.track_id), xy, reliable=not p.truncated_bottom)
-                if math.isnan(xy[0]):
-                    singles.append([o])
-                else:
-                    located.setdefault(cam, []).append(o)
-        sees = {c: cal.sees for c, cal in self.calibs.items()}
-        clusters = cluster(located, self.d_max_m, sees) if located else []
-        return self.gids.update(clusters + singles, ts_ms)
+        return self.assoc.step(group, ts_ms)
 
     def step(
         self, group: Mapping[str, PerceptionFrame], ts_ms: int
