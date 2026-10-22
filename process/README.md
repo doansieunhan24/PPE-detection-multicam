@@ -39,3 +39,4 @@ Mỗi session làm việc có một file. Claude **đọc lại thư mục này 
 |---|---|---|
 | 2026-10-21 | [2026-10-21_s01.md](2026-10-21_s01.md) | Kiểm tra dự án, dựng khung repo |
 | 2026-10-21→22 | [2026-10-21_s02.md](2026-10-21_s02.md) | P1 offline, C1 core, eval, train PPE (SH17+CHV), phân tích visibility |
+| 2026-10-22 | [2026-10-22_s03.md](2026-10-22_s03.md) | Tạm dừng, chờ quay dữ liệu C2 |

@@ -1,6 +1,6 @@
-# STATUS — cập nhật lần cuối 2026-10-22 (s02)
+# STATUS — cập nhật lần cuối 2026-10-22 (s03)
 
-**Phase hiện tại:** P2 xong (PPE detector), phần lớn code P5/P6 xong và test được. **Đang chờ dữ liệu thật C2.**
+**Phase hiện tại:** P2 xong (PPE detector), phần lớn code P5/P6 xong và test được. **TẠM DỪNG theo yêu cầu người dùng — chưa quay được dữ liệu C2.**
 
 ## Đã xong
 - P1 offline backend (YOLO11m-pose@960 + ByteTrack → JSONL) + replay
@@ -31,4 +31,4 @@
 3. P0 DeepStream
 
 ## Session gần nhất
-- [2026-10-21_s02.md](2026-10-21_s02.md)
+- [2026-10-22_s03.md](2026-10-22_s03.md) (tạm dừng); việc lớn gần nhất: [2026-10-21_s02.md](2026-10-21_s02.md)
