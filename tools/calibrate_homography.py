@@ -8,7 +8,13 @@
        python tools/calibrate_homography.py fit --cam cam1 \
            --points configs/calibration/cam1_points.csv \
            --image cam1.jpg --out configs/calibration/cam1.yaml
-   The camera FOV on the floor is the image border mapped through H (clipped to --fov-max-m).
+   The camera FOV on the floor is the image border mapped through H: parts above the horizon
+   are dropped, the rest is limited to --fov-max-m from the bottom-centre floor point (use
+   about the room size, e.g. 8 for the C2 room). Reports in-sample RMS and leave-one-out
+   error (>= 5 points); the leave-one-out number is the one to put in the thesis.
+
+Tiled floor (docs/c2_shooting_script.md §1.3): instead of floor_x/floor_y, fill tile_i/tile_j
+(tile-corner index from the chosen origin) and pass --tile-m 0.6 (tile size in metres).
 """
 
 from __future__ import annotations
@@ -23,17 +29,31 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.geometry.homography import apply_homography, fit_homography  # noqa: E402
+from src.geometry.homography import (  # noqa: E402
+    apply_homography,
+    fit_homography,
+    floor_fov_polygon,
+    loo_errors,
+)
 
 
-def read_points(path: Path) -> tuple[np.ndarray, np.ndarray]:
+def read_points(path: Path, tile_m: float | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """img_x,img_y + floor_x,floor_y (m), or tile_i,tile_j × tile_m. Rows without both skipped."""
     img, floor = [], []
     with open(path, encoding="utf-8", newline="") as f:
         for r in csv.DictReader(f):
-            if r.get("floor_x") in (None, "") or r.get("floor_y") in (None, ""):
+            fx, fy = r.get("floor_x") or "", r.get("floor_y") or ""
+            ti, tj = r.get("tile_i") or "", r.get("tile_j") or ""
+            if fx.strip() and fy.strip():
+                xy = (float(fx), float(fy))
+            elif ti.strip() and tj.strip():
+                if tile_m is None:
+                    raise SystemExit(f"{path}: tile_i/tile_j given, pass --tile-m")
+                xy = (float(ti) * tile_m, float(tj) * tile_m)
+            else:
                 continue
             img.append((float(r["img_x"]), float(r["img_y"])))
-            floor.append((float(r["floor_x"]), float(r["floor_y"])))
+            floor.append(xy)
     return np.array(img), np.array(floor)
 
 
@@ -67,32 +87,32 @@ def cmd_click(args: argparse.Namespace) -> None:
     with open(out, "a", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
         if new:
-            w.writerow(["id", "img_x", "img_y", "floor_x", "floor_y"])
+            w.writerow(["id", "img_x", "img_y", "floor_x", "floor_y", "tile_i", "tile_j"])
         for i, (x, y) in enumerate(pts, 1):
-            w.writerow([i, x, y, "", ""])
-    print(f"{len(pts)} points -> {out}. Fill floor_x/floor_y (metres), then run 'fit'.")
+            w.writerow([i, x, y, "", "", "", ""])
+    print(
+        f"{len(pts)} points -> {out}. Fill floor_x/floor_y (metres) or tile_i/tile_j, "
+        "then run 'fit'."
+    )
 
 
 def cmd_fit(args: argparse.Namespace) -> None:
-    img_pts, floor_pts = read_points(Path(args.points))
+    img_pts, floor_pts = read_points(Path(args.points), args.tile_m)
     H, rms = fit_homography(img_pts, floor_pts)
     per_pt = np.linalg.norm(apply_homography(H, img_pts) - floor_pts, axis=1)
+    loo = loo_errors(img_pts, floor_pts) if len(img_pts) >= 5 else None
     fov: list[list[float]] = []
     if args.image:
         import cv2
 
         h, w = cv2.imread(args.image).shape[:2]
-        # sample the lower part of the border: the horizon maps to infinity
-        border = np.array(
-            [[0, h - 1], [w - 1, h - 1], [w - 1, h * args.fov_top], [0, h * args.fov_top]]
-        )
-        fl = apply_homography(H, border)
-        fl = np.clip(fl, -args.fov_max_m, args.fov_max_m)
-        fov = [[round(float(x), 3), round(float(y), 3)] for x, y in fl]
+        fov = floor_fov_polygon(H, w, h, img_pts, args.fov_max_m, args.fov_top)
     data = {
         "cam_id": args.cam,
         "H": [[float(v) for v in row] for row in H],
         "reprojection_error_m": round(rms, 4),
+        "loo_error_rms_m": None if loo is None else round(float(np.sqrt(np.nanmean(loo**2))), 4),
+        "loo_error_max_m": None if loo is None else round(float(np.nanmax(loo)), 4),
         "n_points": int(len(img_pts)),
         "fov_floor_polygon_m": fov,
     }
@@ -103,9 +123,19 @@ def cmd_fit(args: argparse.Namespace) -> None:
     print(
         f"RMS reprojection error: {rms:.3f} m (max {per_pt.max():.3f} m) over {len(img_pts)} points"
     )
+    if loo is not None:
+        worst = int(np.nanargmax(loo))
+        print(
+            f"leave-one-out: RMS {data['loo_error_rms_m']:.3f} m, max {loo[worst]:.3f} m "
+            f"(point #{worst + 1})"
+        )
+    else:
+        print("leave-one-out: needs >= 5 points")
     print(f"-> {args.out}")
-    if rms > 0.2:
+    if max(rms, data["loo_error_rms_m"] or 0.0) > 0.2:
         print("WARNING: error > 0.2 m (P3 target). Check point order / measurements.")
+    if args.image and not fov:
+        print("WARNING: empty FOV polygon; check --fov-max-m and the markers")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -122,9 +152,10 @@ def main(argv: list[str] | None = None) -> None:
     f.add_argument("--out", required=True)
     f.add_argument("--image", help="frame of this camera, to compute the floor FOV polygon")
     f.add_argument(
-        "--fov-top", type=float, default=0.35, help="FOV uses image rows below this ratio"
+        "--fov-top", type=float, default=0.0, help="FOV uses image rows below this ratio"
     )
     f.add_argument("--fov-max-m", type=float, default=50.0)
+    f.add_argument("--tile-m", type=float, help="tile size (m) for tile_i/tile_j points")
     args = ap.parse_args(argv)
     {"click": cmd_click, "fit": cmd_fit}[args.cmd](args)
 

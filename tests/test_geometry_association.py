@@ -2,7 +2,13 @@ import numpy as np
 import pytest
 
 from src.association.global_id import GlobalIdManager
-from src.association.ground_plane import FloorObs, cluster, floor_centre, match_pair, sync_groups
+from src.association.ground_plane import (
+    FloorObs,
+    cluster,
+    floor_centre,
+    match_pair,
+    sync_groups,
+)
 from src.common.schemas import PerceptionFrame, PersonDet
 from src.geometry.foot_point import foot_point
 from src.geometry.homography import (
@@ -145,71 +151,6 @@ def test_match_pair_truncated_gate():
 def test_match_pair_normalised_cost_prefers_tight_match():
     # the cut obs c1/2 is closest to c2/1 in normalised cost (0.6/2.0), but the joint
     # assignment keeps the tight reliable pair c1/1–c2/1 and gives c1/2 the other partner
-    a = [FloorObs(("c1", 1), (0.0, 0.0)), FloorObs(("c1", 2), (5.0, 5.0))]
-    b = [FloorObs(("c2", 7), (0.3, 0.1)), FloorObs(("c2", 8), (9.0, 9.0))]
-    assert match_pair(a, b, d_max_m=0.8) == [(("c1", 1), ("c2", 7))]
-
-
-def test_cluster_three_cams_and_fov():
-    obs = {
-        "c1": [FloorObs(("c1", 1), (1.0, 1.0))],
-        "c2": [FloorObs(("c2", 5), (1.2, 1.1))],
-        "c3": [FloorObs(("c3", 9), (1.1, 0.9))],
-    }
-    cl = cluster(obs, d_max_m=0.8)
-    assert len(cl) == 1 and len(cl[0]) == 3
-    # c3 cannot see (1,1): it must not be merged
-    sees = {"c1": lambda p: True, "c2": lambda p: True, "c3": lambda p: p[0] > 5}
-    sizes = sorted(len(c) for c in cluster(obs, 0.8, sees))
-    assert sizes == [1, 2]
-
-
-def test_cluster_never_two_obs_of_same_cam():
-    obs = {
-        "c1": [FloorObs(("c1", 1), (0.0, 0.0)), FloorObs(("c1", 2), (1.0, 0.0))],
-        "c2": [FloorObs(("c2", 1), (0.5, 0.0))],
-        "c3": [FloorObs(("c3", 1), (0.95, 0.0))],
-    }
-    for c in cluster(obs, d_max_m=0.8):
-        cams = [o.key[0] for o in c]
-        assert len(cams) == len(set(cams))
-
-
-def test_global_ids_stable_and_reused():
-    m = GlobalIdManager(window=5, reuse_dist_m=0.8, reuse_ttl_ms=1000)
-    a, b = FloorObs(("c1", 1), (0.0, 0.0)), FloorObs(("c2", 4), (0.1, 0.0))
-    g = m.update([[a, b]], 0)
-    assert g[("c1", 1)] == g[("c2", 4)]
-    gid = g[("c1", 1)]
-    # one frame of wrong split must not change the id
-    g = m.update([[a], [b]], 40)
-    assert g[("c1", 1)] == gid
-    # track lost then new track id at the same spot inherits the id
-    g = m.update([[FloorObs(("c1", 2), (0.2, 0.1))]], 500)
-    assert g[("c1", 2)] == gid
-    # far away → new id
-    g = m.update([[FloorObs(("c1", 3), (9.0, 9.0))]], 600)
-    assert g[("c1", 3)] != gid
-
-
-def test_calibration_to_floor_requires_H():
-    with pytest.raises(ValueError):
-        CameraCalibration("x", None).to_floor(np.zeros((1, 2)))
-
-
-def test_match_pair_truncated_gate():
-    a = [FloorObs(("c1", 1), (0.0, 0.0), reliable=False)]
-    b = [FloorObs(("c2", 1), (1.0, 0.0))]
-    assert match_pair(a, b, 0.8) == []  # default: same gate for every pair
-    assert match_pair(a, b, 0.8, d_max_unreliable_m=1.2) == [(("c1", 1), ("c2", 1))]
-    # two reliable obs keep the tight gate
-    a_ok = [FloorObs(("c1", 1), (0.0, 0.0))]
-    assert match_pair(a_ok, b, 0.8, d_max_unreliable_m=1.2) == []
-
-
-def test_match_pair_normalised_cost_prefers_tight_match():
-    # c2/1 is 0.5 m from a reliable c1 obs and 0.6 m from a cut one: with distance / gate the
-    # cut obs (gate 2.0 → 0.3) would win on raw cost… it must take the farther free partner.
     a = [FloorObs(("c1", 1), (0.0, 0.0)), FloorObs(("c1", 2), (1.1, 0.0), reliable=False)]
     b = [FloorObs(("c2", 1), (0.5, 0.0)), FloorObs(("c2", 2), (2.0, 0.0))]
     got = set(match_pair(a, b, 0.8, d_max_unreliable_m=2.0))
