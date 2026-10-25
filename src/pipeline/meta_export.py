@@ -14,6 +14,37 @@ log = get_logger(__name__)
 _STOP = object()
 
 
+def letterbox_keypoints(
+    data,
+    n_values: int,
+    net_w: int,
+    net_h: int,
+    mux_w: int,
+    mux_h: int,
+    sx: float = 1.0,
+    sy: float = 1.0,
+) -> list[tuple[float, float, float]]:
+    """DeepStream-Yolo-Pose keypoints → original-camera pixels.
+
+    The parser stores (x, y, conf) per joint in obj_meta.mask_params, in the *network input*
+    (letterboxed, symmetric padding) space of size mask_params.width × height. Same mapping as
+    the repo's deepstream.py parse_pose_from_meta (checked 2026-10-25, master): undo the
+    letterbox to streammux pixels, then scale (sx, sy) to the camera's own resolution.
+    """
+    n = n_values // 3
+    gain = min(net_w / mux_w, net_h / mux_h)
+    pad_x = (net_w - mux_w * gain) * 0.5
+    pad_y = (net_h - mux_h * gain) * 0.5
+    return [
+        (
+            float((data[3 * k] - pad_x) / gain) * sx,
+            float((data[3 * k + 1] - pad_y) / gain) * sy,
+            float(data[3 * k + 2]),
+        )
+        for k in range(n)
+    ]
+
+
 class JsonlExporter:
     """One JSONL file per camera: <out_dir>/<cam_id>.jsonl."""
 

@@ -1,7 +1,9 @@
 # PGIE: YOLO-pose (person bbox + 17 keypoints), CLAUDE.md D6 / §8.
-# Parser + engine from marcoslucianops/DeepStream-Yolo-Pose — TODO(verify) every path/function
-# name against that repo's config_infer_primary_yolo*_pose.txt for the chosen version, and
-# where it stores keypoints (mask_params vs user meta) before writing the probe.
+# Parser + engine from marcoslucianops/DeepStream-Yolo-Pose. Checked 2026-10-25 against the repo's
+# config_infer_primary_yolo11_pose.txt (master): same parser/function names and clustering.
+# Export: utils/export_yolo11_pose.py -w yolo11m-pose.pt -s 960 --dynamic (copy into ultralytics/).
+# Build the lib: CUDA_VER=12.6 (DS 7.1 x86) / 12.8 (DS 8.0) make -C nvdsinfer_custom_impl_Yolo_pose
+# Keypoints: obj_meta.mask_params, network-input (letterbox) space → src/pipeline/meta_export.py
 [property]
 gpu-id=0
 gie-unique-id=1
@@ -11,6 +13,7 @@ onnx-file=../../models/yolo11m-pose.onnx
 model-engine-file=../../models/yolo11m-pose.onnx_b3_gpu0_fp16.engine
 batch-size=3
 network-mode=2
+process-mode=1
 num-detected-classes=1
 interval=0
 network-type=3

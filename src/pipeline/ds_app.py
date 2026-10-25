@@ -7,7 +7,8 @@ The probe copies metadata into PerceptionFrame and hands it to JsonlExporter (no
 
 TODO(verify) before first run, against the installed DeepStream / pyds version:
 - element/property names below (nvurisrcbin, nvstreammux width/height/batched-push-timeout)
-- where DeepStream-Yolo-Pose stores keypoints (obj_meta.mask_params vs user meta) → _keypoints()
+- keypoints: verified against DeepStream-Yolo-Pose deepstream.py (mask_params, letterboxed
+  network space) → letterbox_keypoints(); still run once and overlay to confirm
 - metadata coordinates are in streammux resolution → scaled back to each camera's resolution
 """
 
@@ -19,24 +20,22 @@ import time
 from src.common.config import load_yaml
 from src.common.logging import get_logger, setup_logging
 from src.common.schemas import PerceptionFrame, PersonDet, PPEDet
-from src.pipeline.meta_export import JsonlExporter
+from src.pipeline.meta_export import JsonlExporter, letterbox_keypoints
 
 log = get_logger(__name__)
 PGIE_ID, SGIE_ID = 1, 2
 PPE_LABELS = ["helmet", "vest", "shoes", "head", "foot"]  # configs/deepstream/labels_ppe.txt
 
 
-def _keypoints(obj_meta, sx: float, sy: float) -> list[tuple[float, float, float]]:
-    """TODO(verify): DeepStream-Yolo-Pose layout. Assumed: mask_params.data holds 17×3 floats
-    (x, y, conf) in streammux pixels."""
+def _keypoints(obj_meta, mux_w: int, mux_h: int, sx: float, sy: float) -> list:
+    """17 COCO joints from DeepStream-Yolo-Pose mask_params (letterboxed network space)."""
     mp = obj_meta.mask_params
-    if mp is None or mp.size < 17 * 3 * 4:
+    if mp is None or mp.size < 17 * 3 * 4:  # float32
         return []
-    data = mp.get_mask_array()
-    return [
-        (float(data[3 * k]) * sx, float(data[3 * k + 1]) * sy, float(data[3 * k + 2]))
-        for k in range(17)
-    ]
+    kp = letterbox_keypoints(
+        mp.get_mask_array(), mp.size // 4, mp.width, mp.height, mux_w, mux_h, sx, sy
+    )
+    return kp[:17]
 
 
 def build_probe(pyds, cams: list[dict], mux_w: int, mux_h: int, exporter: JsonlExporter):
@@ -63,7 +62,7 @@ def build_probe(pyds, cams: list[dict], mux_w: int, mux_h: int, exporter: JsonlE
                         track_id=int(o.object_id),
                         bbox=box,
                         conf=float(o.confidence),
-                        kpts=_keypoints(o, sx, sy),
+                        kpts=_keypoints(o, mux_w, mux_h, sx, sy),
                         truncated_bottom=box[3] >= h - 2,
                         ppe_checked=r.width * sx >= 24 and r.height * sy >= 48,
                     )
