@@ -44,3 +44,8 @@
 - Rule-based (tỉ lệ bbox + góc thân + drop của hông), cam0, test split: P/R/F1 0.650/0.867/0.743, latency median 1.2 s. Đủ làm baseline cho §7.7. ST-GCN là bước sau nếu cần.
 - Bài học kỹ thuật: lịch sử chuyển động phải đi theo **global id**, không theo track id. Tracker đổi ID đúng lúc người ngã (chuyển động nhanh, hình dạng thay đổi). Lỗi này làm mất gần nửa recall.
 - **Phản ví dụ cho fusion theo visibility:** cam trần có v cao nhưng không mang thông tin về tư thế, nên vmean kéo recall từ 0.733 xuống 0.533. Có thể viết vào phần thảo luận: visibility cần đi kèm "informativeness" của góc nhìn. Với PPE (C1) thì khác: cam thấy rõ đầu thì đúng là có thông tin về mũ, nên v hợp lý; còn với tư thế thì phụ thuộc góc nhìn.
+
+## Fall đa góc (MCFD, 2026-10-26)
+- Bảng chính cho §7.7: số cam 1 / 2 / 4 / 8 × vmean / max (MCFD test). 8 cam vmean F1 0.696 so với 0.474 của một cam, FA/giờ thấp hơn. Có thể vẽ biểu đồ F1 theo số cam, kèm error bar.
+- Thảo luận: visibility là điều kiện cần chứ không đủ. Một góc nhìn phải vừa *thấy được* vừa *có thông tin* với đại lượng cần đo. Với PPE (C1) hai điều này trùng nhau (thấy rõ đầu thì biết có mũ), còn với tư thế thì không (cam top-down thấy rõ nhưng không phân biệt được đứng với nằm). UR Fall cam1 là phản ví dụ cụ thể.
+- Phương pháp: phải đo fps thật của dataset (header AVI của MCFD ghi sai 120 fps). Nếu dùng sai thì mọi ngưỡng tính theo giây (hold, drop window) sai theo hệ số 4.

@@ -5,7 +5,7 @@ fall:
   kpt_conf_min: 0.3
   angle_deg: [35, 65]         # torso angle → pose score ramps 0..1 between these
   aspect_ratio: [0.8, 1.4]    # bbox w/h → pose score ramps 0..1 between these
-  drop_ratio: 0.2             # hip drops >= this × standing bbox height ...  # val: MCFD 8-cam vmean F1 0.33 → 0.48, UR Fall flat (was 0.3)
+  drop_ratio: 0.2             # hip drops >= this × standing bbox height (val MCFD + UR Fall; was 0.3) ...
   drop_window_s: 1.0          # ... within this window → "fall motion"
   drop_memory_s: 3.0          # a drop counts for this long after it happened
   no_drop_factor: 0.5         # lying pose without a recent drop (already lying, sitting down slowly)

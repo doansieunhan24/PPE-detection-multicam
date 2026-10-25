@@ -254,3 +254,29 @@
 
   - **Fuse theo v (§7.7) kém hơn cam0 một mình.** Rule tư thế (tỉ lệ bbox, góc thân) không có nghĩa khi nhìn từ trần, mà v chỉ đo được "thấy rõ" chứ không đo được "góc nhìn này có thông tin không". `max` thì bằng cam0 nhưng thêm FP của cam1. **Hệ quả cho thiết kế:** fusion đa cam cho fall cần trọng số theo mức hữu ích của góc nhìn (hình học cam, hoặc học), không chỉ visibility. C2 dùng cam đặt thấp, ngang (giống cam0) nên đánh giá lại trên đó.
 - Giới hạn: té giả trong phòng, sequence ngắn; cam0 và cam1 không đồng bộ chặt (ghép theo frame index, sai lệch tối đa 50 ms).
+
+### 2026-10-26 — Fall đa góc trên **Multiple Cameras Fall (MCFD)** + cấu hình cuối (commit `b72d115`)
+- **Chuẩn bị** (`tools/mcfd_prepare.py`): 24 scenario × 8 cam, pose `yolo11m-pose@640` trên đoạn có nhãn; thời gian chung = (frame − delay − 1)/30 s. GT là code 2 nối tiếp code 3 trong frame của cam tham chiếu (đã áp dụng erratum). Có 23 cú ngã ở 22 scenario; scenario 23–24 chỉ có confounder (ngồi, cúi, nằm sofa). **fps thật là 30**: đo tốc độ đi bằng calibration của báo cáo, ra 1.1 m/s ở 30 fps, so với 4.4 m/s nếu là 120 fps.
+- **Chẩn đoán** (cấu hình cũ, tất cả (cú ngã, cam)): người được phát hiện ở 59.2 % số frame trong lúc ngã/nằm; 74.5 % cặp có tư thế nằm (pose ≥ 0.6) nhưng chỉ 42.4 % có cả drop. Cam cao nhìn xiên làm độ hạ của hông trong ảnh nhỏ đi.
+- **Tune trên val** (scenario lẻ, 11 cú ngã; UR Fall val): `drop_ratio` 0.3 → 0.2. MCFD 8 cam vmean F1 0.333 → 0.476 (FA 44 → 56/giờ); UR Fall F1 0.621 → 0.625. `score_threshold` giữ 0.6 (vmean 0.3–0.5 tăng FA nhiều hơn recall; max gần như không đổi theo ngưỡng).
+- **Kết quả test, cấu hình cuối** (hold 0.2, drop 0.2):
+
+MCFD test (scenario chẵn, 12 cú ngã; trung bình ± std trên các tổ hợp cam, `eval/reports/fall/final_mcfd_test_subsets`):
+
+| Số cam | Fusion | Recall | Precision | F1 | FA/giờ |
+|---|---|---|---|---|---|
+| 1 | — | 0.417 ± 0.208 | 0.579 ± 0.186 | 0.474 ± 0.201 | 42.6 ± 15.0 |
+| 2 | vmean | 0.549 ± 0.154 | 0.690 ± 0.137 | 0.605 ± 0.140 | 37.1 ± 16.0 |
+| 2 | max | 0.583 ± 0.113 | 0.615 ± 0.057 | 0.596 ± 0.083 | 55.1 ± 9.5 |
+| 4 | vmean | 0.563 ± 0.196 | 0.661 ± 0.178 | 0.605 ± 0.189 | 39.2 ± 12.1 |
+| 4 | max | 0.625 ± 0.054 | 0.580 ± 0.043 | 0.602 ± 0.048 | 68.9 ± 6.3 |
+| **8** | **vmean** | **0.667** | **0.727** | **0.696** | **38.2** |
+| 8 | max | 0.583 | 0.538 | 0.560 | 76.4 |
+
+UR Fall (cấu hình cuối): cam0 test P/R/F1 0.682/1.000/0.811, FA 134.8/giờ. Chỉ tính cảnh té: cam0 recall 0.833 (FP 0), cam1 trần 0.433 (FP 2), cam0 + cam1 vmean 0.600 (FP 0), max 0.800 (FP 2).
+
+- **Kết luận:**
+  - Đa cam giúp phát hiện ngã: 8 cam vmean có F1 0.696, so với 0.474 ± 0.201 của một cam, và FA/giờ còn thấp hơn. Độ lệch giữa các cam đơn rất lớn (std recall 0.21), tức là vị trí cam quan trọng; fusion bù được điểm này.
+  - **vmean (§7.7) tốt nhất khi mọi góc nhìn đều có thông tin** (MCFD, cam treo cao nhìn xiên). **Cam nhìn thẳng từ trên xuống thì làm hỏng vmean** (UR Fall cam1): rule tư thế không có nghĩa từ góc đó, nhưng v vẫn cao. Nên dùng vmean và loại cam top-down khỏi phần fuse fall (đề xuất, chưa làm, **chờ người dùng**).
+  - Số mẫu nhỏ: 12 cú ngã ở test MCFD, 15 ở test UR Fall. Chênh lệch 1–2 sự kiện là trong biên nhiễu; std giữa các tổ hợp cam cũng lớn.
+  - Điểm nghẽn còn lại: recall detection lúc nằm (59 %) trên ảnh góc rộng bị méo, và rule drop. Bước tiếp theo nếu cần là ST-GCN hoặc mô hình học trên chuỗi skeleton.
