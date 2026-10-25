@@ -21,6 +21,37 @@ def file_ts_ms(frame_idx: int, fps: float, start_ms: int, offset_ms: int) -> int
     return start_ms + round(frame_idx * 1000.0 / fps) + offset_ms
 
 
+class FrameClock:
+    """Media time (ms from file start) of successive frames of a video file.
+
+    mode="pts": container timestamp (cv2 CAP_PROP_POS_MSEC after read). Phone recordings are
+    often variable frame rate, so frame_idx/fps drifts by seconds over a 10-min session.
+    A missing or non-increasing pts (some backends report 0) falls back to last + 1000/fps.
+    mode="index": frame_idx * 1000 / fps (constant frame rate assumption).
+    """
+
+    def __init__(self, fps: float, mode: str = "pts") -> None:
+        if mode not in ("pts", "index"):
+            raise ValueError(f"unknown timestamp mode {mode!r}")
+        self.fps, self.mode = fps, mode
+        self.prev_ms: float | None = None
+        self.n = 0
+        self.n_fallback = 0
+
+    def next(self, pos_msec: float | None) -> int:
+        step = 1000.0 / self.fps
+        if self.mode == "index":
+            t = self.n * step
+        elif pos_msec is not None and (self.prev_ms is None or pos_msec > self.prev_ms):
+            t = float(pos_msec)
+        else:
+            t = 0.0 if self.prev_ms is None else self.prev_ms + step
+            self.n_fallback += self.n > 0
+        self.prev_ms = t
+        self.n += 1
+        return round(t)
+
+
 def pad_clip_bbox(bbox: Sequence[float], pad: float, img_w: int, img_h: int) -> BBox:
     x1, y1, x2, y2 = bbox
     dw, dh = (x2 - x1) * pad, (y2 - y1) * pad

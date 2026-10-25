@@ -23,4 +23,8 @@ ppe:                          # SGIE equivalent: PPE detector on person crops
   min_crop_h_px: 48
   class_map: {}               # model class name -> canonical name (helmet, vest, boots, head, foot, ...)
 
+# Video files: pts = container timestamps (phones record variable frame rate),
+# index = frame_idx / fps. Check a session with tools/session_check.py.
+file_timestamps: pts
+
 truncated_bottom_margin_px: 2   # bbox y2 within this margin of image bottom → truncated_bottom

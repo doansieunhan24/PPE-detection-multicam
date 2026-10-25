@@ -23,7 +23,7 @@ from src.common.logging import get_logger, setup_logging
 from src.common.schemas import PerceptionFrame, PersonDet
 from src.parts.ppe_assign import containment
 from src.perception_offline.convert import (
-    file_ts_ms,
+    FrameClock,
     is_live_uri,
     pad_clip_bbox,
     persons_from_arrays,
@@ -155,6 +155,7 @@ def run_camera(
     if not live and not fps:
         raise RuntimeError(f"unknown fps for {uri}; set fps in cameras.yaml")
     offset_ms = int(cam.get("time_offset_ms", 0))
+    clock = None if live else FrameClock(fps, perception_cfg.get("file_timestamps", "pts"))
     model = UltralyticsPerception(perception_cfg)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -166,8 +167,8 @@ def run_camera(
                 break
             ts_ms = (
                 int(time.time() * 1000) + offset_ms
-                if live
-                else file_ts_ms(n, fps, start_ms, offset_ms)
+                if clock is None
+                else start_ms + clock.next(cap.get(cv2.CAP_PROP_POS_MSEC)) + offset_ms
             )
             img_h, img_w = frame.shape[:2]
             pf = PerceptionFrame(
@@ -185,6 +186,8 @@ def run_camera(
                     "%s: %d frames, %.1f fps", cam["cam_id"], n, n / (time.perf_counter() - t0)
                 )
     cap.release()
+    if clock is not None and clock.n_fallback:
+        log.warning("%s: %d frames without usable pts", cam["cam_id"], clock.n_fallback)
     dt = time.perf_counter() - t0
     log.info(
         "%s: done %d frames in %.1fs (%.1f fps) → %s",

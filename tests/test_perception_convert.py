@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from src.perception_offline.convert import (
+    FrameClock,
     crop_box_to_image,
     file_ts_ms,
     is_live_uri,
@@ -22,6 +23,26 @@ def test_file_ts_ms():
     assert file_ts_ms(0, 25, 1000, 0) == 1000
     assert file_ts_ms(25, 25, 1000, -40) == 1960
     assert file_ts_ms(1, 30, 0, 0) == 33
+
+
+def test_frame_clock_uses_pts_for_variable_frame_rate():
+    clock = FrameClock(fps=30, mode="pts")
+    # 30 fps then a 15 fps stretch: pts is the truth, frame_idx/fps would drift
+    assert [clock.next(t) for t in (0.0, 33.3, 66.7, 133.3, 200.0)] == [0, 33, 67, 133, 200]
+    assert clock.n_fallback == 0
+
+
+def test_frame_clock_falls_back_when_pts_missing_or_not_increasing():
+    clock = FrameClock(fps=25, mode="pts")
+    assert [clock.next(t) for t in (0.0, 40.0, 0.0, None, 200.0)] == [0, 40, 80, 120, 200]
+    assert clock.n_fallback == 2
+
+
+def test_frame_clock_index_mode_ignores_pts():
+    clock = FrameClock(fps=25, mode="index")
+    assert [clock.next(t) for t in (0.0, 999.0, 5.0)] == [0, 40, 80]
+    with pytest.raises(ValueError):
+        FrameClock(fps=25, mode="wallclock")
 
 
 def test_pad_clip_bbox_clips_to_image():
