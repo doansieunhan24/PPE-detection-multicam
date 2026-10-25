@@ -28,6 +28,7 @@ class Associator:
     vote_window: int = 15
     fov_margin_m: float = 0.0
     foot_point_source: str = "ankles"
+    d_max_truncated_m: float | None = None
     gids: GlobalIdManager = field(init=False)
 
     def __post_init__(self) -> None:
@@ -42,6 +43,7 @@ class Associator:
             a.get("vote_window_frames", 15),
             a.get("fov_margin_m", 0.0),
             a.get("foot_point", "ankles"),
+            a.get("d_max_truncated_m"),
         )
 
     def floor_xy(self, cam: str, p: PersonDet) -> tuple[float, float]:
@@ -64,5 +66,5 @@ class Associator:
                 else:
                     located.setdefault(cam, []).append(o)
         sees = {c: partial(cal.sees, margin_m=self.fov_margin_m) for c, cal in self.calibs.items()}
-        clusters = cluster(located, self.d_max_m, sees) if located else []
+        clusters = cluster(located, self.d_max_m, sees, self.d_max_truncated_m) if located else []
         return self.gids.update(clusters + singles, ts_ms)

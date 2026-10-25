@@ -27,19 +27,26 @@ python -m training.ppe_detector.prepare_sh17_person_crops --mode crops
 python -m training.ppe_detector.train
 python -m training.ppe_detector.export_onnx --weights runs/ppe/sh17_crop_y11s/weights/best.pt
 
-# 2. Thu dữ liệu C2: calibrate + đồng bộ
-python tools/calibrate_homography.py click --image cam1.jpg --points configs/calibration/cam1_points.csv
+# 2. Thu dữ liệu C2 (kịch bản: docs/c2_shooting_script.md)
+#    data/raw/s01/cam1.mp4, cam2.mp4, cam3.mp4 → kiểm tra fps/VFR, đồng bộ (tắt/bật đèn đầu + cuối),
+#    trích frame sàn trống ra data/raw/s01/calib/, ghi cameras.yaml của session cạnh JSONL
+python tools/session_check.py --session data/raw/s01 --ref cam1 --out-cameras data/jsonl/s01/cameras.yaml
+python tools/calibrate_homography.py click --image data/raw/s01/calib/cam1.jpg \
+    --points configs/calibration/cam1_points.csv
 python tools/calibrate_homography.py fit --cam cam1 --points configs/calibration/cam1_points.csv \
-    --image cam1.jpg --out configs/calibration/cam1.yaml
-python tools/sync_offsets.py --videos cam1=... cam2=... cam3=... --ref cam1
+    --image data/raw/s01/calib/cam1.jpg --out configs/calibration/cam1.yaml
+#    zones riêng cho session (nếu phòng khác): chép configs/zones.yaml → data/jsonl/s01/zones.yaml
+#    (cameras.yaml / zones.yaml trong thư mục JSONL ghi đè configs/ cho session đó)
 
-# 3. Perception offline → JSONL (1 file / cam)
-python -m src.perception_offline.ultralytics_runner --out data/jsonl/s01 \
-    --source cam1=data/raw/s01/cam1.mp4 --source cam2=... --source cam3=...
+# 3. Perception offline → JSONL (1 file / cam), timestamp theo pts (video điện thoại thường VFR)
+python -m src.perception_offline.ultralytics_runner --cameras data/jsonl/s01/cameras.yaml --out data/jsonl/s01
 python tools/replay.py --jsonl data/jsonl/s01/cam1.jsonl --video data/raw/s01/cam1.mp4 --out cam1_vis.mp4
 
 # 4. Gán nhãn interval
 python tools/label_intervals.py template --jsonl data/jsonl/s01 --out data/annotations/s01
+#    intervals_src.csv: gt_id,type,start,end,note với giờ video cam1 (1:02.5) hoặc giờ phiếu (14:03:30)
+python tools/label_intervals.py convert --jsonl data/jsonl/s01 --src data/annotations/s01/intervals_src.csv \
+    --out data/annotations/s01/intervals.csv --clock video --ref cam1
 python tools/label_intervals.py validate --jsonl data/jsonl/s01 --ann data/annotations/s01
 
 # 5. Analytics + bảng chính (B0–B4 vs P + ablation)

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from src.association.ground_plane import FloorObs, PersonKey
+from src.association.ground_plane import FloorObs, PersonKey, floor_centre
 
 
 @dataclass
@@ -62,7 +62,7 @@ class GlobalIdManager:
             cams = {o.key[0] for o in cl}
             votes = Counter(v for o in cl if (v := self._vote(o.key)) is not None)
             gid = next((g for g, _ in votes.most_common() if not cams & taken.get(g, set())), None)
-            centre = np.mean([o.xy_m for o in cl], axis=0)
+            centre = floor_centre(cl)
             if gid is None:
                 gid = self._reuse_lost(centre, ts_ms, taken) or self._new_id()
             taken.setdefault(gid, set()).update(cams)

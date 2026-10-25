@@ -112,7 +112,13 @@ class PPEEngine:
 
         states, alerts = [], []
         for gid, mem in members.items():
-            xys = [xy for cam, p, _ in mem if not math.isnan((xy := self._floor_xy(cam, p))[0])]
+            located = [
+                (xy, p.truncated_bottom)
+                for cam, p, _ in mem
+                if not math.isnan((xy := self._floor_xy(cam, p))[0])
+            ]
+            # bbox cut by the image bottom → foot point unreliable (§7.1): use others if any
+            xys = [xy for xy, cut in located if not cut] or [xy for xy, _ in located]
             floor = tuple(np.mean(xys, axis=0).tolist()) if xys else None
             zone = self._zone_of(floor) if floor else None
             required = zone.required_ppe if zone else self.default_required

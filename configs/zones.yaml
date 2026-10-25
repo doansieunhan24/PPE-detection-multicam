@@ -11,6 +11,12 @@ association:
   # bbox_bottom | ankles. Ankles are above the floor → biased floor point (§7.1 change,
   # pending user confirmation). WILDTRACK median floor error 0.23 m vs 0.68 m.
   foot_point: bbox_bottom
+  # Gate for a pair where one bbox is cut by the image bottom (foot point unreliable, §7.1;
+  # such obs are also left out of the cluster floor position when others exist).
+  # WILDTRACK: truncated floor error median 0.61 m (det) / 0.77 m (GT boxes) vs 0.23 / 0.09 m;
+  # 1.2 m: oracle pair F1 0.982 → 0.985, count MAE 1.09 → 0.92. null = same as d_max_m.
+  # Few cut boxes in WILDTRACK (~3 %); C2 (low cams, small room) has many more → retune there.
+  d_max_truncated_m: 1.2
 
 # PPE required when the person has no floor position (uncalibrated) or is outside all zones
 default_required_ppe: [helmet, vest]

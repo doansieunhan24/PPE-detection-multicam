@@ -4,6 +4,9 @@
     python -m src.analytics_runner --jsonl ... --out ... --policy B3
     python -m src.analytics_runner --jsonl ... --out ... --ablation use_visibility=false
 
+cameras.yaml / zones.yaml inside the --jsonl dir (written by tools/session_check.py) override
+the ones in --config for that session; all thresholds always come from --config.
+
 Writes states.jsonl, alerts.jsonl, gid_map.jsonl (ts_ms, cam_id, track_id, global_id),
 run.json (config snapshot, git commit, counts).
 """
@@ -19,7 +22,7 @@ from src.alerts.notifier_telegram import TelegramNotifier
 from src.alerts.store import AlertStore
 from src.association.ground_plane import sync_groups
 from src.behavior.engine import BehaviorEngine
-from src.common.config import DEFAULT_CONFIG_DIR, load_config
+from src.common.config import DEFAULT_CONFIG_DIR, SESSION_CONFIGS, load_config
 from src.common.jsonl import read_frames
 from src.common.logging import get_logger, setup_logging
 from src.fusion.engine import PPEEngine
@@ -30,10 +33,18 @@ log = get_logger(__name__)
 
 
 def git_commit() -> str | None:
+    """Short HEAD hash, suffixed -dirty when tracked files have uncommitted changes."""
     try:
-        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
+        head = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
+        dirty = (
+            subprocess.run(
+                ["git", "diff", "--quiet", "HEAD"], stderr=subprocess.DEVNULL, check=False
+            ).returncode
+            != 0
+        )
     except (OSError, subprocess.CalledProcessError):
         return None
+    return f"{head}-dirty" if dirty else head
 
 
 def _parse_ablation(items: list[str]) -> dict[str, bool | str]:
@@ -66,8 +77,11 @@ def run(
     db: bool = False,
 ) -> dict:
     fusion_cfg = load_config("fusion", config_dir)
-    zones_cfg = load_config("zones", config_dir)
-    cams_cfg = load_config("cameras", config_dir)
+    zones_cfg = load_config("zones", config_dir, override_dir=jsonl_dir)
+    cams_cfg = load_config("cameras", config_dir, override_dir=jsonl_dir)
+    overrides = [n for n in SESSION_CONFIGS if (jsonl_dir / f"{n}.yaml").exists()]
+    if overrides:
+        log.info("session config from %s: %s", jsonl_dir, overrides)
     alerts_cfg = load_config("alerts", config_dir)
     behavior_cfg = load_config("behavior", config_dir)
     calibs = load_calibs(cams_cfg, config_dir.parent)
@@ -122,6 +136,7 @@ def run(
         "ablation": ablation,
         "commit": git_commit(),
         "cams": sorted(streams),
+        "session_configs": overrides,
         "calibrated_cams": sorted(c for c, cal in calibs.items() if cal.calibrated),
         "groups": n_groups,
         "alerts": n_alerts,

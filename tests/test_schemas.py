@@ -62,3 +62,17 @@ def test_alert_level_range():
 @pytest.mark.parametrize("name", ["fusion", "behavior", "alerts", "cameras", "zones"])
 def test_configs_load(name):
     assert load_config(name)
+
+
+def test_load_config_session_override(tmp_path):
+    from src.common.config import load_config
+
+    base, sess = tmp_path / "configs", tmp_path / "s01"
+    base.mkdir()
+    sess.mkdir()
+    (base / "cameras.yaml").write_text("sync_tol_ms: 50\n", encoding="utf-8")
+    (base / "fusion.yaml").write_text("tau_s: 2\n", encoding="utf-8")
+    (sess / "cameras.yaml").write_text("sync_tol_ms: 40\n", encoding="utf-8")
+    assert load_config("cameras", base)["sync_tol_ms"] == 50
+    assert load_config("cameras", base, override_dir=sess)["sync_tol_ms"] == 40
+    assert load_config("fusion", base, override_dir=sess)["tau_s"] == 2

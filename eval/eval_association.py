@@ -122,9 +122,11 @@ def evaluate(
     roi: list[tuple[float, float]] | None,
     fov_margin_m: float = 0.0,
     foot_point: str = "ankles",
+    d_max_truncated_m: float | None = None,
 ) -> dict:
-    assoc = Associator(calibs, d_max_m, vote_window, fov_margin_m, foot_point)
+    assoc = Associator(calibs, d_max_m, vote_window, fov_margin_m, foot_point, d_max_truncated_m)
     floor_err: list[float] = []
+    floor_err_cut: list[float] = []  # detections with truncated_bottom
     pred: dict[ObsKey, int] = {}
     gt_of: dict[ObsKey, int] = {}
     n_gt_obs = 0
@@ -161,9 +163,8 @@ def evaluate(
                     if gt_xy.get(g) is not None:
                         xy = assoc.floor_xy(cam, p)
                         if not np.isnan(xy[0]):
-                            floor_err.append(
-                                float(np.hypot(xy[0] - gt_xy[g][0], xy[1] - gt_xy[g][1]))
-                            )
+                            e = float(np.hypot(xy[0] - gt_xy[g][0], xy[1] - gt_xy[g][1]))
+                            (floor_err_cut if p.truncated_bottom else floor_err).append(e)
 
         for i in range(len(obs)):
             for j in range(i + 1, len(obs)):
@@ -195,6 +196,11 @@ def evaluate(
         "d_max_m": d_max_m,
         "fov_margin_m": fov_margin_m,
         "foot_point": foot_point,
+        "d_max_truncated_m": d_max_truncated_m,
+        "floor_err_truncated_m": {
+            "n": len(floor_err_cut),
+            "median": float(np.median(floor_err_cut)) if floor_err_cut else None,
+        },
         "instants": len(cnt_gt),
         "detections": len(pred),
         "matched_detections": n_matched,
@@ -246,6 +252,12 @@ def main(argv: list[str] | None = None) -> None:
         choices=["ankles", "bbox_bottom"],
         help="sweep; default zones.yaml foot_point",
     )
+    ap.add_argument(
+        "--d-max-truncated",
+        type=float,
+        nargs="*",
+        help="sweep gate for pairs with a bbox cut by the image bottom (<= 0: same as d_max)",
+    )
     ap.add_argument("--iou", type=float, default=0.5)
     ap.add_argument(
         "--roi",
@@ -259,8 +271,12 @@ def main(argv: list[str] | None = None) -> None:
     args = ap.parse_args(argv)
     setup_logging()
 
-    assoc_cfg = load_config("zones", args.config_dir).get("association", {})
-    sync_tol = load_config("cameras", args.config_dir).get("sync_tol_ms", 50)
+    assoc_cfg = load_config("zones", args.config_dir, override_dir=args.jsonl).get(
+        "association", {}
+    )
+    sync_tol = load_config("cameras", args.config_dir, override_dir=args.jsonl).get(
+        "sync_tol_ms", 50
+    )
     streams = {
         p.stem: sorted(read_frames(p), key=lambda f: f.ts_ms)
         for p in sorted(args.jsonl.glob("*.jsonl"))
@@ -275,12 +291,13 @@ def main(argv: list[str] | None = None) -> None:
 
     results = []
     sweep = [
-        (d, fm, fpt)
+        (d, fm, fpt, None if dt is not None and dt <= 0 else dt)
         for d in args.d_max or [assoc_cfg.get("d_max_m", 0.8)]
         for fm in args.fov_margin or [assoc_cfg.get("fov_margin_m", 0.0)]
         for fpt in args.foot_point or [assoc_cfg.get("foot_point", "ankles")]
+        for dt in args.d_max_truncated or [assoc_cfg.get("d_max_truncated_m")]
     ]
-    for d, fm, fpt in sweep:
+    for d, fm, fpt, dt in sweep:
         r = evaluate(
             streams,
             calibs,
@@ -292,13 +309,15 @@ def main(argv: list[str] | None = None) -> None:
             roi,
             fm,
             fpt,
+            dt,
         )
         results.append(r)
         log.info(
-            "d_max %.2f fov_margin %.2f foot %s: pair P/R/F1 %.3f/%.3f/%.3f  IDF1 %.3f "
+            "d_max %.2f (cut %s) fov_margin %.2f foot %s: pair P/R/F1 %.3f/%.3f/%.3f  IDF1 %.3f "
             "(assoc-only %.3f)  count MAE %.2f bias %+.2f (sum %.2f, max %.2f)  "
             "floor err med %.3f m",
             d,
+            dt,
             fm,
             fpt,
             r["pairwise"]["precision"],

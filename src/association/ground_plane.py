@@ -49,15 +49,32 @@ def sync_groups(
 
 
 def match_pair(
-    a: Sequence[FloorObs], b: Sequence[FloorObs], d_max_m: float
+    a: Sequence[FloorObs],
+    b: Sequence[FloorObs],
+    d_max_m: float,
+    d_max_unreliable_m: float | None = None,
 ) -> list[tuple[PersonKey, PersonKey]]:
+    """Hungarian on floor distance. A pair with an unreliable obs (bbox cut by the image
+    bottom → foot point too far from the camera, §7.1) is gated by d_max_unreliable_m
+    instead; the cost is distance / gate so a loose gate does not win over tight matches."""
     if not a or not b:
         return []
     pa = np.array([o.xy_m for o in a])
     pb = np.array([o.xy_m for o in b])
-    cost = np.linalg.norm(pa[:, None, :] - pb[None, :, :], axis=2)
+    dist = np.linalg.norm(pa[:, None, :] - pb[None, :, :], axis=2)
+    loose = d_max_m if d_max_unreliable_m is None else d_max_unreliable_m
+    ra = np.array([o.reliable for o in a])
+    rb = np.array([o.reliable for o in b])
+    gate = np.where(ra[:, None] & rb[None, :], d_max_m, loose)
+    cost = dist / gate
     rows, cols = linear_sum_assignment(cost)
-    return [(a[r].key, b[c].key) for r, c in zip(rows, cols, strict=True) if cost[r, c] < d_max_m]
+    return [(a[r].key, b[c].key) for r, c in zip(rows, cols, strict=True) if cost[r, c] < 1.0]
+
+
+def floor_centre(obs: Sequence[FloorObs]) -> np.ndarray:
+    """Mean floor position, from reliable obs only when there is at least one."""
+    rel = [o.xy_m for o in obs if o.reliable]
+    return np.mean(rel or [o.xy_m for o in obs], axis=0)
 
 
 class _UnionFind:
@@ -79,6 +96,7 @@ def cluster(
     obs_by_cam: Mapping[str, Sequence[FloorObs]],
     d_max_m: float,
     sees: Mapping[str, object] | None = None,
+    d_max_unreliable_m: float | None = None,
 ) -> list[list[FloorObs]]:
     """Cluster observations of one synced instant. `sees[cam](xy) -> bool` restricts a pair
     match to points inside both cameras' floor FOV. At most one obs per camera per cluster."""
@@ -91,7 +109,7 @@ def cluster(
     for ca, cb in combinations(sorted(obs_by_cam), 2):
         a = [o for o in obs_by_cam[ca] if sees is None or sees[cb](o.xy_m)]
         b = [o for o in obs_by_cam[cb] if sees is None or sees[ca](o.xy_m)]
-        for ka, kb in match_pair(a, b, d_max_m):
+        for ka, kb in match_pair(a, b, d_max_m, d_max_unreliable_m):
             uf.union(ka, kb)
     groups: dict[PersonKey, list[FloorObs]] = {}
     for k, o in by_key.items():
@@ -108,7 +126,7 @@ def _split_same_cam(group: list[FloorObs]) -> list[list[FloorObs]]:
     cams = [o.key[0] for o in group]
     if len(cams) == len(set(cams)):
         return [group]
-    centre = np.mean([o.xy_m for o in group], axis=0)
+    centre = floor_centre(group)
     best: dict[str, FloorObs] = {}
     rest: list[FloorObs] = []
     for o in sorted(group, key=lambda o: float(np.linalg.norm(np.array(o.xy_m) - centre))):
