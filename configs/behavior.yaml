@@ -1,7 +1,7 @@
 # Behavior thresholds (CLAUDE.md §7.7). Rule-based defaults; TODO: tune on fall datasets / C2.
 
 fall:
-  method: rule                # rule | stgcn
+  method: rule                # rule | seq (learned 1D temporal CNN, training/fall/train_seq.py)
   kpt_conf_min: 0.3
   angle_deg: [35, 65]         # torso angle → pose score ramps 0..1 between these
   aspect_ratio: [0.8, 1.4]    # bbox w/h → pose score ramps 0..1 between these
@@ -13,7 +13,9 @@ fall:
   h_ref_px: 96                # whole-body visibility size reference for multi-view fusion
   score_threshold: 0.6        # fused score; lying without drop (≤ 0.5) never alerts alone
   hold_s: 0.2                 # UR Fall val (odd seqs): 0.5 → 0.2 recall 0.27 → 0.60, same FA; falls end soon after lying
-  seq_len: 45                 # frames, for the learned (ST-GCN) variant
+  seq_len: 45                 # frames (1.5 s @ 30 fps), learned variant
+  seq_model: models/fall_seq.pt
+  seq_threshold: 0.5          # fixed a priori (training uses the val split; no separate tuning set)
 
 immobility:
   disp_eps_ratio: 0.01        # mean kpt displacement / bbox height per frame below this = still

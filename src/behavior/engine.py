@@ -45,6 +45,8 @@ class _TrackHist:
     hips: deque = field(default_factory=lambda: deque(maxlen=200))  # (ts, hip_y, bbox_h)
     last_drop_ms: int | None = None
     prev_kpts: list | None = None
+    seq: deque | None = None  # per-frame features (fall.method: seq)
+    prev_det: PersonDet | None = None
 
 
 class BehaviorEngine:
@@ -64,6 +66,41 @@ class BehaviorEngine:
         # fast motion of a fall, which would erase the hip-drop history (UR Fall, s05)
         self.tracks: dict[tuple[str, int], _TrackHist] = {}
         self.last_fall_ms: dict[int, int] = {}
+        self.seq_model = None
+        if cfg["fall"].get("method", "rule") == "seq":
+            self._load_seq_model(cfg["fall"]["seq_model"])
+
+    def _load_seq_model(self, path: str) -> None:
+        import torch
+
+        from src.behavior.seq_features import build_model
+
+        ckpt = torch.load(path, map_location="cpu", weights_only=False)
+        self.seq_len = int(ckpt["seq_len"])
+        self.seq_dev = "cuda" if torch.cuda.is_available() else "cpu"
+        self.seq_model = build_model().to(self.seq_dev).eval()
+        self.seq_model.load_state_dict(ckpt["state_dict"])
+
+    def _seq_scores(self, keys: list[tuple[str, int]], persons: list[PersonDet]) -> list[float]:
+        """Learned per-camera fall probability for each (cam, gid) this instant (batched)."""
+        import numpy as np
+        import torch
+
+        from src.behavior.seq_features import frame_features, window
+
+        wins = []
+        for key, p in zip(keys, persons, strict=True):
+            h = self.tracks.setdefault(key, _TrackHist())
+            if h.seq is None:
+                h.seq = deque(maxlen=self.seq_len)
+            h.seq.append(frame_features(p, h.prev_det))
+            h.prev_det = p
+            wins.append(window(h.seq, self.seq_len))
+        if not wins:
+            return []
+        with torch.no_grad():
+            x = torch.from_numpy(np.stack(wins)).to(self.seq_dev)
+            return torch.sigmoid(self.seq_model(x)).cpu().tolist()
 
     # --- per-camera fall score ------------------------------------------------------------
 
@@ -123,29 +160,33 @@ class BehaviorEngine:
         f, im = self.cfg["fall"], self.cfg["immobility"]
         alerts: list[AlertEvent] = []
         per_gid: dict[int, list[tuple[str, PersonDet, float, float]]] = {}
-        for cam, fr in group.items():
-            for p in fr.persons:
-                gid = gid_of[(cam, p.track_id)]
-                s = self.cam_fall_score((cam, gid), p, ts_ms)
-                v = body_visibility(p.kpts, p.bbox, f["h_ref_px"])
-                per_gid.setdefault(gid, []).append((cam, p, s, v))
+        obs = [(cam, p, gid_of[(cam, p.track_id)]) for cam, fr in group.items() for p in fr.persons]
+        if self.seq_model is not None:
+            scores = self._seq_scores([(c, g) for c, _, g in obs], [p for _, p, _ in obs])
+            threshold = f.get("seq_threshold", 0.5)
+        else:
+            scores = [self.cam_fall_score((c, g), p, ts_ms) for c, p, g in obs]
+            threshold = f["score_threshold"]
+        for (cam, p, gid), s in zip(obs, scores, strict=True):
+            v = body_visibility(p.kpts, p.bbox, f["h_ref_px"])
+            per_gid.setdefault(gid, []).append((cam, p, s, v))
 
-        for gid, obs in per_gid.items():
-            cams = [c for c, *_ in obs]
+        for gid, views in per_gid.items():
+            cams = [c for c, *_ in views]
             if f.get("fusion", "vmean") == "max":  # ablation: most confident view decides
-                fused = max(s for _, _, s, _ in obs)
+                fused = max(s for _, _, s, _ in views)
             else:  # §7.7: visibility-weighted mean
-                w = sum(v for *_, v in obs)
-                fused = sum(s * v for _, _, s, v in obs) / w if w > 0 else 0.0
-            start = self.fall_alerter.update(gid, fused >= f["score_threshold"], ts_ms)
+                w = sum(v for *_, v in views)
+                fused = sum(s * v for _, _, s, v in views) / w if w > 0 else 0.0
+            start = self.fall_alerter.update(gid, fused >= threshold, ts_ms)
             if start is not None:
                 self.last_fall_ms[gid] = ts_ms
                 alerts.append(self._alert(AlertType.FALL, 3, ts_ms, start, gid, None, cams))
 
             # immobility: the best-seen camera decides whether the body moved this frame;
             # the alerter's hold time (T_immobile) measures how long it stayed still
-            cam, p, _, _ = max(obs, key=lambda o: o[3])
-            h = self.tracks[(cam, gid)]
+            cam, p, _, _ = max(views, key=lambda o: o[3])
+            h = self.tracks.setdefault((cam, gid), _TrackHist())
             disp = mean_kpt_displacement(h.prev_kpts or [], p.kpts)
             h.prev_kpts = list(p.kpts)
             bh = max(1.0, p.bbox[3] - p.bbox[1])
