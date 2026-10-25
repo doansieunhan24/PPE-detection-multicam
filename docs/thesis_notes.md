@@ -39,3 +39,8 @@
 - **Người bị cắt chân ở mép dưới ảnh:** điểm chân lấy từ đáy bbox bị đẩy ra xa camera. WILDTRACK đo được sai số median 0.6–0.77 m, so với 0.09–0.23 m khi không bị cắt. Dùng gate riêng cho nhóm này và lấy vị trí cụm từ obs tin cậy. Với cam đặt thấp trong phòng nhỏ (C2) tình huống này hay gặp.
 - **Calibration:** báo cáo sai số **leave-one-out**, không báo RMS trên chính các điểm dùng để fit. Với 6 điểm và homography 8 bậc tự do, RMS in-sample lạc quan.
 - imgsz lớn hơn không cải thiện association: recall detection tăng nhưng đếm tệ hơn vì người ở xa có điểm sàn nhiễu (WILDTRACK, 1280 vs 960).
+
+## Fall trên UR Fall (2026-10-25)
+- Rule-based (tỉ lệ bbox + góc thân + drop của hông), cam0, test split: P/R/F1 0.650/0.867/0.743, latency median 1.2 s. Đủ làm baseline cho §7.7. ST-GCN là bước sau nếu cần.
+- Bài học kỹ thuật: lịch sử chuyển động phải đi theo **global id**, không theo track id. Tracker đổi ID đúng lúc người ngã (chuyển động nhanh, hình dạng thay đổi). Lỗi này làm mất gần nửa recall.
+- **Phản ví dụ cho fusion theo visibility:** cam trần có v cao nhưng không mang thông tin về tư thế, nên vmean kéo recall từ 0.733 xuống 0.533. Có thể viết vào phần thảo luận: visibility cần đi kèm "informativeness" của góc nhìn. Với PPE (C1) thì khác: cam thấy rõ đầu thì đúng là có thông tin về mũ, nên v hợp lý; còn với tư thế thì phụ thuộc góc nhìn.

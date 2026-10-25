@@ -10,7 +10,7 @@
 | SHWD | https://github.com/njvisionpower/Safety-Helmet-Wearing-Dataset (Google Drive id 1qWm7rrwvjAWs1slymbrLaCf7Q-wnGLEX) | MIT (nhãn trên repo) | 7,581 ảnh VOC; `hat`=đầu có mũ, `person`=đầu không mũ; negatives phần lớn từ SCUT-HEAD. Chỉ dùng để eval |
 | CHV | https://github.com/ZijianWang-ZW/PPE_detection (Google Drive id 1fdGn67W0B7ShpBDbbQpUF0ScPQa4DR0a) | "open for free use", yêu cầu trích dẫn repo + bài Sensors 2021 | 1,330 ảnh; person, vest, 4 màu mũ |
 | Le2i | TODO(verify) | TODO(verify) | |
-| UR Fall | TODO(verify) | TODO(verify) | |
+| UR Fall | https://fenix.ur.edu.pl/~mkepski/ds/uf.html | **CC BY-NC-SA 4.0** (trang dataset, kiểm 2026-10-25); trích Kwolek & Kępski, CMPB 117(3) 2014 | 30 fall (cam0 ngang sàn + cam1 trần) + 40 ADL (cam0). mp4 depth\|RGB 640×240 @30 fps, RGB 320×240. Nhãn từng frame −1/0/1 (`urfall-cam0-*.csv`). `tools/urfall_prepare.py` |
 | CAUCAFall | TODO(verify) | TODO(verify) | |
 | Multiple Cameras Fall (Montréal) | TODO(verify) | TODO(verify) | |
 
@@ -227,3 +227,30 @@
 | 1280 | 27,135 | 0.488 | 0.768 | 0.741 | 0.356 | 7.04 (+6.88) | 0.239 m |
 
 - 1280 bắt thêm người ở xa nhưng điểm chân của họ nhiễu hơn, nên cụm bị tách ra và đếm thừa gấp đôi. **Giữ 960.** C2 là phòng nhỏ, người to trong ảnh, nên không cần imgsz lớn.
+
+### 2026-10-25 — Fall (rule-based) trên **UR Fall** — `eval/eval_fall.py` (commit `d03b492`)
+- **Dữ liệu:** `tools/urfall_prepare.py`, 30 cảnh té (cam0 ngang sàn + cam1 trần) + 40 ADL (cam0), RGB 320×240 @30 fps. Pose `yolo11m-pose@640`, ByteTrack, không bật PPE. GT episode = frame "falling" đầu tiên → frame "lying" cuối cùng. ADL (kể cả nằm xuống có chủ đích) chỉ là mẫu âm. Có đúng 1 người mỗi sequence nên giữ person conf cao nhất làm actor, global id 0. δ = 2 s.
+- **Lỗi tìm được:** lịch sử hông (drop) lưu theo `(cam, track_id)`. Khi người ngã, tracker hay đổi ID nên mất drop, score bị nhân 0.5 (dưới ngưỡng). Đổi sang `(cam, global_id)`. cam0, tất cả sequence, hold 0.5: recall 0.267 → 0.433, FP giữ nguyên 8. Có test hồi quy `test_fall_survives_track_id_switch`.
+- **Sweep trên val** (sequence số lẻ; score_threshold, hold_s, drop_ratio, drop_memory_s): chỉ `hold_s` tác động mạnh. 0.5 → 0.2: recall 0.267 → 0.600, FP 5 → 5. Nguyên nhân là sequence kết thúc ngay sau khi nằm (đoạn "lying" chỉ 0.2–2 s). Chọn **0.2** (0.1 cho F1 val 0.667 so với 0.621, cùng FP, nhưng dễ bị kích bởi nhiễu một frame).
+- **Kết quả cam0** (report `eval/reports/fall/urfall_cam0_{val,test,all}`):
+
+| Split | hold_s | Seq | Falls | TP | FP | FN | Precision | Recall | F1 | FA/giờ | latency median |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| val | 0.5 | 35 | 15 | 4 | 5 | 11 | 0.444 | 0.267 | 0.333 | 91.0 | 1700 ms |
+| val | 0.2 | 35 | 15 | 9 | 5 | 6 | 0.643 | 0.600 | 0.621 | 91.0 | 1300 ms |
+| **test** | 0.5 | 35 | 15 | 9 | 3 | 6 | 0.750 | 0.600 | 0.667 | 57.8 | 1567 ms |
+| **test** | **0.2** | 35 | 15 | 13 | 7 | 2 | 0.650 | **0.867** | **0.743** | 134.8 | 1167 ms |
+| all | 0.2 | 70 | 30 | 22 | 12 | 8 | 0.647 | 0.733 | 0.688 | 112.3 | 1217 ms |
+
+  - Trên test, hold 0.2 tăng recall nhưng FA/giờ cũng tăng (57.8 → 134.8): đây là đánh đổi thật, không phải cải thiện thuần. Báo động sai đến từ ADL nằm hoặc ngồi xuống nhanh (adl-10, 16, 30, 32, 34, 38, 40). FA/giờ cao vì thời lượng ADL rất ngắn (tổng khoảng 4 phút).
+- **Đa góc (chỉ 30 cảnh té, không có ADL cho cam1):**
+
+| Cam | Fusion | TP | FP | Recall | Precision |
+|---|---|---|---|---|---|
+| cam0 (ngang) | — | 22 | 0 | 0.733 | 1.000 |
+| cam1 (trần) | — | 13 | 2 | 0.433 | 0.867 |
+| cam0 + cam1 | vmean (§7.7) | 16 | 0 | 0.533 | 1.000 |
+| cam0 + cam1 | max (ablation) | 22 | 2 | 0.733 | 0.917 |
+
+  - **Fuse theo v (§7.7) kém hơn cam0 một mình.** Rule tư thế (tỉ lệ bbox, góc thân) không có nghĩa khi nhìn từ trần, mà v chỉ đo được "thấy rõ" chứ không đo được "góc nhìn này có thông tin không". `max` thì bằng cam0 nhưng thêm FP của cam1. **Hệ quả cho thiết kế:** fusion đa cam cho fall cần trọng số theo mức hữu ích của góc nhìn (hình học cam, hoặc học), không chỉ visibility. C2 dùng cam đặt thấp, ngang (giống cam0) nên đánh giá lại trên đó.
+- Giới hạn: té giả trong phòng, sequence ngắn; cam0 và cam1 không đồng bộ chặt (ghép theo frame index, sai lệch tối đa 50 ms).
