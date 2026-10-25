@@ -76,3 +76,15 @@ def test_load_config_session_override(tmp_path):
     assert load_config("cameras", base)["sync_tol_ms"] == 50
     assert load_config("cameras", base, override_dir=sess)["sync_tol_ms"] == 40
     assert load_config("fusion", base, override_dir=sess)["tau_s"] == 2
+
+
+def test_apply_overrides_dotted_keys():
+    from src.common.config import apply_overrides
+
+    cfg = {"evidence": {"theta_obs": 1.0, "ds": {"theta_obs": 0.5}}, "alert": {"T_alert_s": 3}}
+    out = apply_overrides(cfg, {"evidence.theta_obs": 0.25, "evidence.ds.theta_obs": 0.1})
+    assert out["evidence"]["theta_obs"] == 0.25 and out["evidence"]["ds"]["theta_obs"] == 0.1
+    assert cfg["evidence"]["theta_obs"] == 1.0  # input untouched
+    assert apply_overrides(cfg, None) == cfg
+    with pytest.raises(KeyError):
+        apply_overrides(cfg, {"evidence.theta_obz": 1})

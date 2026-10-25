@@ -33,3 +33,9 @@
 - Thêm dung sai mép FOV (người bị cắt ở mép ảnh) giúp tăng recall ghép cặp.
 - Thí nghiệm số cam: với detector thật, đếm người bị chi phối bởi recall detection. Đây là lý do nên dùng nhiều cam cho crowd counting (§7.7).
 - Giới hạn: WILDTRACK là quảng trường ngoài trời, cam xa (> 10 m) và đông người, khác bố trí xưởng 6×8 m của C2. Tracker chạy 2 fps.
+
+## Chuẩn bị C2 (2026-10-25)
+- **Đồng bộ đa cam bằng điện thoại:** video điện thoại thường là VFR, nên phải dùng timestamp của container. Tính theo `frame_idx/fps` có thể lệch vài giây sau một vài phút. Có thể viết 1 đoạn ngắn ở chương hệ thống: sự kiện tắt/bật đèn ở đầu và cuối session cho offset và drift (`tools/session_check.py`).
+- **Người bị cắt chân ở mép dưới ảnh:** điểm chân lấy từ đáy bbox bị đẩy ra xa camera. WILDTRACK đo được sai số median 0.6–0.77 m, so với 0.09–0.23 m khi không bị cắt. Dùng gate riêng cho nhóm này và lấy vị trí cụm từ obs tin cậy. Với cam đặt thấp trong phòng nhỏ (C2) tình huống này hay gặp.
+- **Calibration:** báo cáo sai số **leave-one-out**, không báo RMS trên chính các điểm dùng để fit. Với 6 điểm và homography 8 bậc tự do, RMS in-sample lạc quan.
+- imgsz lớn hơn không cải thiện association: recall detection tăng nhưng đếm tệ hơn vì người ở xa có điểm sàn nhiễu (WILDTRACK, 1280 vs 960).

@@ -52,6 +52,7 @@ python tools/label_intervals.py validate --jsonl data/jsonl/s01 --ann data/annot
 # 5. Analytics + bảng chính (B0–B4 vs P + ablation)
 python -m src.analytics_runner --jsonl data/jsonl/s01 --out data/results/s01/P
 python -m eval.run_baselines --sessions data/jsonl/s01 --gt data/annotations --out eval/reports/main --ablations
+python -m eval.run_sensitivity --sessions data/jsonl/s01 --gt data/annotations --out eval/reports/sensitivity --jobs 4
 
 # 6. Alert + dashboard (P7): lưu SQLite (+Telegram nếu bật trong configs/alerts.yaml, token trong .env)
 python -m src.analytics_runner --jsonl data/jsonl/s01 --out data/results/s01/P --db

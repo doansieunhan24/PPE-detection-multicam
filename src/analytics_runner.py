@@ -22,7 +22,12 @@ from src.alerts.notifier_telegram import TelegramNotifier
 from src.alerts.store import AlertStore
 from src.association.ground_plane import sync_groups
 from src.behavior.engine import BehaviorEngine
-from src.common.config import DEFAULT_CONFIG_DIR, SESSION_CONFIGS, load_config
+from src.common.config import (
+    DEFAULT_CONFIG_DIR,
+    SESSION_CONFIGS,
+    apply_overrides,
+    load_config,
+)
 from src.common.jsonl import read_frames
 from src.common.logging import get_logger, setup_logging
 from src.fusion.engine import PPEEngine
@@ -75,8 +80,10 @@ def run(
     policy: str,
     ablation: dict[str, bool],
     db: bool = False,
+    fusion_overrides: dict | None = None,
 ) -> dict:
-    fusion_cfg = load_config("fusion", config_dir)
+    """fusion_overrides: dotted keys into fusion.yaml (eval/run_sensitivity.py)."""
+    fusion_cfg = apply_overrides(load_config("fusion", config_dir), fusion_overrides)
     zones_cfg = load_config("zones", config_dir, override_dir=jsonl_dir)
     cams_cfg = load_config("cameras", config_dir, override_dir=jsonl_dir)
     overrides = [n for n in SESSION_CONFIGS if (jsonl_dir / f"{n}.yaml").exists()]
@@ -134,6 +141,7 @@ def run(
         "jsonl": str(jsonl_dir),
         "policy": policy,
         "ablation": ablation,
+        "fusion_overrides": fusion_overrides or {},
         "commit": git_commit(),
         "cams": sorted(streams),
         "session_configs": overrides,

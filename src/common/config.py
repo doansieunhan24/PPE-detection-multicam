@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,20 @@ def load_config(
     if override_dir is not None and (Path(override_dir) / f"{name}.yaml").exists():
         return load_yaml(Path(override_dir) / f"{name}.yaml")
     return load_yaml(Path(config_dir) / f"{name}.yaml")
+
+
+def apply_overrides(cfg: dict[str, Any], overrides: dict[str, Any] | None) -> dict[str, Any]:
+    """Copy of cfg with dotted keys set, e.g. {"evidence.theta_obs": 0.5}. Keys must exist."""
+    out = copy.deepcopy(cfg)
+    for key, value in (overrides or {}).items():
+        node = out
+        *path, leaf = key.split(".")
+        for k in path:
+            node = node[k]
+        if leaf not in node:
+            raise KeyError(f"unknown config key {key!r}")
+        node[leaf] = value
+    return out
 
 
 SESSION_CONFIGS = ("cameras", "zones")  # may differ per recording session; thresholds may not

@@ -190,3 +190,40 @@
   - Với detector thật, nút thắt là (a) sai số điểm chân trên sàn và (b) recall detection trong đám đông.
   - IDF1 thấp (0.35) một phần vì tracker chỉ chạy 2 fps trên WILDTRACK.
   - Baseline "max theo cam" đếm tốt trên WILDTRACK chỉ vì C6/C1 nhìn gần hết quảng trường, nên **không tổng quát** cho bố trí FOV chồng một phần.
+
+### 2026-10-25 — Chuẩn bị nhận dữ liệu C2: timestamp VFR, đồng bộ, chạy thử pipeline (commit `ed07203`, `d6c52bc`, `9868856`)
+- **Video điện thoại có frame rate thay đổi (VFR).** Trước đây offline backend tính `ts = frame_idx / fps`. Đã kiểm tra trên video VFR tổng hợp (ffmpeg, 150 frame @30 fps rồi @15 fps): OpenCV `CAP_PROP_POS_MSEC` sau `read()` trả **đúng pts của frame vừa đọc**, còn cách tính theo index lệch 2.4 s tại frame 150. Đã đổi sang pts (`perception.file_timestamps: pts`, `FrameClock`), fallback +1000/fps khi pts thiếu hoặc không tăng.
+- **`tools/session_check.py`** (fps / VFR / thời lượng, sự kiện tắt-bật đèn ở đầu + cuối → offset + drift, frame sàn trống, cameras.yaml của session):
+  - Session giả 3 cam (độ lệch đặt trước 0 / 1.2 / 0.4 s, cam3 VFR): offset đo được 0 / 1200 / 400 ms, drift 0, VFR của cam3 được phát hiện.
+  - WILDTRACK 3 cam ghép thành video 2 fps, cam2 cắt 2 frame đầu: offset đo được 1000 ms (đúng).
+- **Chạy thử toàn bộ quy trình C2** trên `data/rehearsal/wt3` (WILDTRACK C1/C4/C6 → session_check → ultralytics_runner (pose + PPE, 11.7–14.4 fps) → analytics_runner (tự nhận cameras.yaml của session) → label_intervals template/convert/validate → run_baselines --ablations → make_evidence → dashboard). Mọi bước chạy được. **Số liệu của lần chạy thử không có ý nghĩa** (nhãn giả; người WILDTRACK không đội mũ) nên không ghi ở đây.
+
+### 2026-10-25 — Association: người bị cắt ở mép dưới ảnh (§7.1) — `eval_association --d-max-truncated` (commit `9868856`)
+- Trước đây cờ `truncated_bottom` được gán nhưng association không dùng tới. Đo trên WILDTRACK (ROI −3 −9 9 27, 7 cam), sai số sàn median của detection bị cắt so với không bị cắt:
+
+| Input | n bị cắt | median bị cắt | median không bị cắt |
+|---|---|---|---|
+| Oracle (box GT) | 1,196 | 0.766 m | 0.087 m |
+| YOLO11m-pose@960 | 208 | 0.606 m | 0.227 m |
+
+- Thay đổi: cặp có một obs bị cắt dùng gate `d_max_truncated_m`, chi phí Hungarian = khoảng cách / gate; vị trí sàn của cụm (global_id, zone) lấy từ obs không bị cắt nếu có.
+- Sweep (d_max 0.8, fov_margin 0.5, foot bbox_bottom; report `eval/reports/association/wildtrack_*_truncated_sweep.json`):
+
+| d_max_truncated | Oracle F1 | Oracle IDF1 | Oracle count MAE | Det F1 | Det IDF1 | Det count MAE |
+|---|---|---|---|---|---|---|
+| = d_max (0.8) | 0.982 | 0.953 | 1.09 | 0.784 | 0.349 | 3.36 |
+| **1.2** | **0.985** | 0.959 | **0.92** | **0.786** | 0.348 | 3.35 |
+| 1.6 | 0.985 | 0.960 | 0.92 | 0.786 | 0.348 | 3.35 |
+| 2.0 | 0.985 | 0.959 | 0.94 | 0.784 | 0.348 | 3.37 |
+
+- Chọn 1.2 m. Hiệu ứng nhỏ vì WILDTRACK chỉ khoảng 3 % box bị cắt. C2 (cam thấp, phòng nhỏ, cảnh C4 đứng sát cam) sẽ có nhiều hơn, cần tune lại ở đó. Benchmark bán tổng hợp không dùng association nên không bị ảnh hưởng.
+
+### 2026-10-25 — WILDTRACK: pose imgsz 1280 vs 960 (commit `9868856`)
+- `tools/wildtrack_detect.py --imgsz 1280`, 7 cam, cùng cấu hình association mặc định.
+
+| imgsz | detections | det recall | det precision | pair F1 | IDF1 | count MAE (bias) | floor err median |
+|---|---|---|---|---|---|---|---|
+| 960 | 22,746 | 0.436 | 0.818 | 0.786 | 0.348 | 3.35 (+2.35) | 0.227 m |
+| 1280 | 27,135 | 0.488 | 0.768 | 0.741 | 0.356 | 7.04 (+6.88) | 0.239 m |
+
+- 1280 bắt thêm người ở xa nhưng điểm chân của họ nhiễu hơn, nên cụm bị tách ra và đếm thừa gấp đôi. **Giữ 960.** C2 là phòng nhỏ, người to trong ảnh, nên không cần imgsz lớn.
