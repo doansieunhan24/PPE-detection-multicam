@@ -357,7 +357,7 @@ else:                    state = state_{t−1}        # hysteresis
 | **Đã có (2026-10-21)** | SH17: 8,099 ảnh / 75,994 instance (khớp README), chỉ 927 helmet + 530 safety-vest. CHV: 1,330 ảnh, person/vest/4 màu mũ (3,887 person, 1,784 vest, 3,538 helmet), không nhãn head/shoes/foot → pseudo-label bằng model SH17 (chỉ train/val) | Chi tiết số crop/instance: `data/processed/*/stats.json`, `docs/experiments.md` |
 | Association (đa cam, public) | **WILDTRACK** (EPFL, 7 cam, 400 frame có nhãn @2 fps) | Chỉ để eval association. License TODO(verify). Tải từ mirror HF vì link EPFL bị reset |
 | Fall (đơn góc) | Le2i, UR Fall, CAUCAFall | Train/eval module fall. |
-| Fall (đa góc) | Multiple Cameras Fall Dataset (Univ. Montréal, 8 cam) | Đánh giá fusion fall đa camera. |
+| Fall (đa góc) | Multiple Cameras Fall Dataset (Univ. Montréal, 8 cam) | Đánh giá fusion fall đa camera. Đã dùng (`tools/mcfd_prepare.py`): fps thật 30, GT theo TR 1350 + erratum 2025 |
 | **Đánh giá C1** | **Bộ tự thu (C2)** | Chỉ dùng để **eval** (hoặc chia theo session), **không train detector trên bộ này**. |
 
 > **Kiểm tra license và link chính thức của từng dataset trước khi dùng, ghi vào `docs/experiments.md`.** Không tự bịa số lượng ảnh hay class. Đọc từ file của dataset.
@@ -427,7 +427,7 @@ else:                    state = state_{t−1}        # hysteresis
 | P8 | 12–14 | Ablation, sensitivity, FPS bench, (optional) Jetson Orin | Toàn bộ bảng/biểu đồ trong `eval/reports/` |
 | P9 | 14–16 | Viết thuyết minh, slide, video demo | — |
 
-**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (association đã kiểm chứng trên WILDTRACK). Chuỗi xử lý C2 (session_check → nhãn → baselines/ablation/sensitivity) đã chạy thử từ đầu đến cuối. P6: fall đã có event metrics trên UR Fall; immobility/intrusion/crowd chờ C2. Chờ dữ liệu C2 (P4) và quyền Docker trong WSL (P0, DS 7.1). Chi tiết: `process/STATUS.md`.
+**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (association đã kiểm chứng trên WILDTRACK). Chuỗi xử lý C2 (session_check → nhãn → baselines/ablation/sensitivity) đã chạy thử từ đầu đến cuối. P6: fall đã có event metrics trên UR Fall + MCFD (8 cam); immobility/intrusion/crowd chờ C2. Chờ dữ liệu C2 (P4) và quyền Docker trong WSL (P0, DS 7.1). Chi tiết: `process/STATUS.md`.
 
 ---
 
@@ -515,6 +515,7 @@ pytest -q && ruff check src eval tools
 | 2026-10-25 | Calibration báo cáo sai số **leave-one-out** (`loo_error_rms_m`) | RMS in-sample lạc quan khi chỉ có 6–8 điểm |
 | 2026-10-25 | Lịch sử behavior (drop hông, keypoint trước) theo `(cam, global_id)` thay vì `(cam, track_id)`; `fall.hold_s` 0.5 → 0.2 | UR Fall: tracker đổi ID lúc ngã làm mất drop; hold 0.2 tune trên val (số lẻ), test F1 0.667 → 0.743 nhưng FA/giờ 57.8 → 134.8 |
 | 2026-10-25 | `fall.fusion: vmean` (§7.7) giữ nguyên, thêm `max` làm ablation. **Hỏi người dùng** có thêm trọng số theo mức hữu ích của góc nhìn không | UR Fall cam0 + cam1 trần: vmean recall 0.533 < cam0 0.733 |
+| 2026-10-26 | `fall.drop_ratio` 0.3 → 0.2; giữ `fall.fusion: vmean` | Val MCFD + UR Fall. MCFD test: 8 cam vmean F1 0.696 so với 1 cam 0.474, max 0.560. Cam top-down (UR Fall cam1) làm vmean giảm, đề xuất loại cam đó khỏi phần fuse fall (chờ người dùng) |
 | — | Số cam / loại cam / có Jetson Orin không: `TODO` | |
 
 ---
