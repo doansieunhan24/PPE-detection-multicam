@@ -12,7 +12,7 @@
 - Association trên WILDTRACK: oracle pair F1 0.985, YOLO11m-pose F1 0.786 (`docs/experiments.md`)
 - **Chuẩn bị nhận C2:** `tools/session_check.py` (VFR, offset + drift từ tắt/bật đèn, frame calibrate, cameras.yaml của session), `label_intervals convert` (phiếu ghi → intervals), calibrate với chỉ số gạch + sai số leave-one-out + FOV an toàn cho cam thấp
 - P0: scaffolding + probe đã đối chiếu với DeepStream-Yolo-Pose; chọn DS 7.1 (docs WSL2, Ubuntu 22.04); hướng dẫn trong `docker/README.md`
-- 128 test pass, ruff sạch (pytest cần `--basetemp` ghi được trên máy này)
+- 133 test pass, ruff sạch (pytest cần `--basetemp` ghi được trên máy này)
 
 ## Đang dở
 - (không có)
