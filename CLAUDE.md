@@ -427,7 +427,7 @@ else:                    state = state_{t−1}        # hysteresis
 | P8 | 12–14 | Ablation, sensitivity, FPS bench, (optional) Jetson Orin | Toàn bộ bảng/biểu đồ trong `eval/reports/` |
 | P9 | 14–16 | Viết thuyết minh, slide, video demo | — |
 
-**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (association đã kiểm chứng trên WILDTRACK). Chuỗi xử lý C2 (session_check → nhãn → baselines/ablation/sensitivity) đã chạy thử từ đầu đến cuối. Chờ dữ liệu C2 (P4) và quyền Docker trong WSL (P0, DS 7.1). Chi tiết: `process/STATUS.md`.
+**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (association đã kiểm chứng trên WILDTRACK). Chuỗi xử lý C2 (session_check → nhãn → baselines/ablation/sensitivity) đã chạy thử từ đầu đến cuối. P6: fall đã có event metrics trên UR Fall; immobility/intrusion/crowd chờ C2. Chờ dữ liệu C2 (P4) và quyền Docker trong WSL (P0, DS 7.1). Chi tiết: `process/STATUS.md`.
 
 ---
 
@@ -513,6 +513,8 @@ pytest -q && ruff check src eval tools
 | 2026-10-25 | **§7.1 bbox bị cắt mép dưới:** cặp có obs bị cắt dùng gate `association.d_max_truncated_m` (1.2 m), cost = khoảng cách/gate; vị trí sàn của cụm lấy từ obs không bị cắt. **Chờ người dùng xác nhận** | WILDTRACK: sai số sàn median của box bị cắt 0.61–0.77 m, so với 0.09–0.23 m khi không bị cắt; oracle F1 0.982 → 0.985, count MAE 1.09 → 0.92 |
 | 2026-10-25 | Giữ pose imgsz 960 (không dùng 1280) | WILDTRACK 1280: det recall +5 điểm nhưng pair F1 0.786 → 0.741, count MAE 3.35 → 7.04 |
 | 2026-10-25 | Calibration báo cáo sai số **leave-one-out** (`loo_error_rms_m`) | RMS in-sample lạc quan khi chỉ có 6–8 điểm |
+| 2026-10-25 | Lịch sử behavior (drop hông, keypoint trước) theo `(cam, global_id)` thay vì `(cam, track_id)`; `fall.hold_s` 0.5 → 0.2 | UR Fall: tracker đổi ID lúc ngã làm mất drop; hold 0.2 tune trên val (số lẻ), test F1 0.667 → 0.743 nhưng FA/giờ 57.8 → 134.8 |
+| 2026-10-25 | `fall.fusion: vmean` (§7.7) giữ nguyên, thêm `max` làm ablation. **Hỏi người dùng** có thêm trọng số theo mức hữu ích của góc nhìn không | UR Fall cam0 + cam1 trần: vmean recall 0.533 < cam0 0.733 |
 | — | Số cam / loại cam / có Jetson Orin không: `TODO` | |
 
 ---

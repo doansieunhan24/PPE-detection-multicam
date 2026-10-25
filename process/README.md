@@ -42,3 +42,4 @@ Mỗi session làm việc có một file. Claude **đọc lại thư mục này 
 | 2026-10-22 | [2026-10-22_s03.md](2026-10-22_s03.md) | Tạm dừng, chờ quay dữ liệu C2 |
 | 2026-10-22 | [2026-10-22_s04.md](2026-10-22_s04.md) | Association trên WILDTRACK; FOV margin; foot point = đáy bbox (chờ xác nhận) |
 | 2026-10-25 | [2026-10-25_s05.md](2026-10-25_s05.md) | Chuẩn bị nhận C2 (pts/VFR, session_check, nhãn từ phiếu, config theo session), bbox bị cắt, LOO calibration, sensitivity, bench FPS, probe DS, hướng dẫn P0 |
+| 2026-10-25 | [2026-10-25_s06.md](2026-10-25_s06.md) | Fall trên UR Fall: sửa lịch sử theo global id, hold 0.2 (test F1 0.743), fuse theo v thua cam0 |
