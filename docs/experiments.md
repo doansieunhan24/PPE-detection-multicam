@@ -299,3 +299,21 @@ UR Fall (cấu hình cuối): cam0 test P/R/F1 0.682/1.000/0.811, FA 134.8/giờ
   - Với seq, vmean luôn tốt hơn max: score đã được hiệu chỉnh hơn nên phép trung bình có ý nghĩa hơn.
   - Trên UR Fall một cam, seq **không** tốt hơn rule một cách tin cậy (F1 0.667–0.828 tuỳ seed), vì dữ liệu train ít (15 cảnh té UR Fall ở split val). Không chọn seed hay ensemble sau khi xem test.
   - Mặc định vẫn là `method: rule` (§7.7 baseline). seq là biến thể; nếu dùng thì nên train lại có thêm C2.
+
+### 2026-10-26 — Xâm nhập vùng cấm và tụ tập trên **WILDTRACK** — `eval/eval_zones.py` (commit `920a711`)
+- **Cách làm:** GT vị trí sàn của mọi người ở mọi frame có nhãn (2 fps, 200 s, khoảng 24 người/frame). Vùng chọn tất định từ GT, không nhìn dự đoán:
+  - 6 vùng cấm 2 × 2 m, xếp hạng theo số người khác nhau đi qua, lấy nhóm ở giữa (không lấy ô đông nhất).
+  - 8 vùng rủi ro 4 × 4 m đông nhất; K = phân vị 60 của số người GT (chạy với 4 vùng và phân vị 75 thì chỉ có 2 sự kiện).
+  - GT episode = ở trong vùng liên tục ≥ T (T_intr 1 s, crowd T 5 s), cùng định nghĩa với alerter. Chạy toàn bộ hệ thống (7 cam → association → floor theo global id → BehaviorEngine). Cooldown 0. Ghép theo vùng, không theo người, δ = 2 s.
+- **Kết quả** (report `eval/reports/zones/wildtrack_*_crowd8`):
+
+| Input | Loại | GT events | TP | FP | FN | Precision | Recall | F1 | FA/giờ |
+|---|---|---|---|---|---|---|---|---|---|
+| Box GT (oracle) | INTRUSION | 54 | 51 | 5 | 3 | 0.911 | 0.944 | 0.927 | 90.2 |
+| Box GT (oracle) | CROWD | 15 | 12 | 3 | 3 | 0.800 | 0.800 | 0.800 | 54.1 |
+| YOLO11m-pose | INTRUSION | 54 | 32 | 21 | 22 | 0.604 | 0.593 | 0.598 | 378.9 |
+| YOLO11m-pose | CROWD | 15 | 6 | 5 | 9 | 0.545 | 0.400 | 0.462 | 90.2 |
+
+- Đếm người trong vùng rủi ro (detector): MAE 0.38–0.79 người/vùng; ở vài vùng bias âm tới −0.68 (đếm thiếu), so với oracle MAE ≤ 0.39.
+- **Kết luận:** logic vùng + association + alerter đúng khi detection đúng (oracle F1 0.93 / 0.80). Với detector thật, lỗi chủ yếu đến từ recall detection trong đám đông dày (det recall 0.436, xem mục association). Hai vùng cấm (F3, F6) bỏ sót toàn bộ. FP của oracle là do điểm chân dao động quanh mép vùng. WILDTRACK đông hơn nhiều so với kịch bản C2 (3 người), nên đây là trường hợp khó.
+- Giới hạn: 200 s, 2 fps; FA/giờ ngoại suy từ thời lượng ngắn nên dao động lớn.

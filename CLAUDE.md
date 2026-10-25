@@ -427,7 +427,7 @@ else:                    state = state_{t−1}        # hysteresis
 | P8 | 12–14 | Ablation, sensitivity, FPS bench, (optional) Jetson Orin | Toàn bộ bảng/biểu đồ trong `eval/reports/` |
 | P9 | 14–16 | Viết thuyết minh, slide, video demo | — |
 
-**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (association đã kiểm chứng trên WILDTRACK). Chuỗi xử lý C2 (session_check → nhãn → baselines/ablation/sensitivity) đã chạy thử từ đầu đến cuối. P6: fall đã có event metrics trên UR Fall + MCFD (8 cam); immobility/intrusion/crowd chờ C2. Chờ dữ liệu C2 (P4) và quyền Docker trong WSL (P0, DS 7.1). Chi tiết: `process/STATUS.md`.
+**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (association đã kiểm chứng trên WILDTRACK). Chuỗi xử lý C2 (session_check → nhãn → baselines/ablation/sensitivity) đã chạy thử từ đầu đến cuối. P6: event metrics cho fall (UR Fall + MCFD), intrusion và crowd (WILDTRACK); immobility chờ C2. Chờ dữ liệu C2 (P4) và quyền Docker trong WSL (P0, DS 7.1). Chi tiết: `process/STATUS.md`.
 
 ---
 
