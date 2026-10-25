@@ -1,6 +1,7 @@
 """Fall detection event metrics on UR Fall (CLAUDE.md §7.7, §10.1 Behavior; P6 "Done khi").
 
-Runs src/behavior BehaviorEngine on PerceptionFrame JSONL from tools/urfall_prepare.py.
+Runs src/behavior BehaviorEngine on PerceptionFrame JSONL from tools/urfall_prepare.py or
+tools/mcfd_prepare.py (--root data/external/mcfd, cams cam1..cam8).
 UR Fall has one actor per sequence and no floor calibration, so each camera's most confident
 person is that actor (global id 0); with --cams cam0 cam1 the per-camera fall scores are
 fused by body visibility exactly as in the live system (falls only: ADL has no cam1).
@@ -21,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -51,10 +53,10 @@ def _num(v: str) -> float | str:
 
 
 def in_split(seq: str, split: str) -> bool:
-    """val = odd sequence number, test = even (fall-03 → val, adl-12 → test)."""
+    """val = odd sequence number, test = even (fall-03 → val, adl-12, chute04 → test)."""
     if split == "all":
         return True
-    odd = int(seq.rsplit("-", 1)[1]) % 2 == 1
+    odd = int(re.search(r"(\d+)$", seq).group(1)) % 2 == 1
     return odd == (split == "val")
 
 
@@ -74,26 +76,39 @@ def run_sequence(
     return raised
 
 
+def gt_events(g: dict) -> list[list[int]]:
+    """Fall episodes of a sequence: "falls" (several, MCFD) or "fall" (one, UR Fall)."""
+    if "falls" in g:
+        return g["falls"]
+    return [g["fall"]] if g.get("fall") else []
+
+
+def seq_duration_ms(g: dict) -> int:
+    if "span_ms" in g:
+        return g["span_ms"][1] - g["span_ms"][0]
+    return round(g["n_frames"] * 1000 / g["fps"])
+
+
 def score(per_seq: dict[str, dict], gt: dict[str, dict], delta_ms: int) -> dict:
+    """Each GT episode matches at most one alert inside [start − δ, end + δ]; the rest are FP."""
     tp = fp = n_pos = 0
     latency: list[int] = []
     dur_ms = 0
     for seq, r in per_seq.items():
         g = gt[seq]
-        dur_ms += round(g["n_frames"] * 1000 / g["fps"])
-        alerts = sorted(r["alerts"])
-        hit = None
-        if g["fall"]:
+        dur_ms += seq_duration_ms(g)
+        free = sorted(r["alerts"])
+        r["tp"] = 0
+        for a, b in gt_events(g):
             n_pos += 1
-            a, b = g["fall"]
-            hit = next((t for t in alerts if a - delta_ms <= t <= b + delta_ms), None)
-        if hit is not None:
-            tp += 1
-            latency.append(hit - g["fall"][0])
-            fp += len(alerts) - 1
-        else:
-            fp += len(alerts)
-        r["tp"] = hit is not None
+            hit = next((t for t in free if a - delta_ms <= t <= b + delta_ms), None)
+            if hit is not None:
+                free.remove(hit)
+                tp += 1
+                r["tp"] += 1
+                latency.append(hit - a)
+        fp += len(free)
+        r["fp"] = len(free)
     prec = tp / (tp + fp) if tp + fp else 0.0
     rec = tp / n_pos if n_pos else 0.0
     hours = dur_ms / 3.6e6
@@ -109,8 +124,8 @@ def score(per_seq: dict[str, dict], gt: dict[str, dict], delta_ms: int) -> dict:
         "fa_per_hour": fp / hours if hours else float("nan"),
         "duration_s": dur_ms / 1000,
         "latency_ms_median": float(np.median(latency)) if latency else None,
-        "fp_sequences": sorted(s for s, r in per_seq.items() if len(r["alerts"]) > r["tp"]),
-        "missed": sorted(s for s, r in per_seq.items() if gt[s]["fall"] and not r["tp"]),
+        "fp_sequences": sorted(s for s, r in per_seq.items() if r["fp"]),
+        "missed": sorted(s for s, r in per_seq.items() if r["tp"] < len(gt_events(gt[s]))),
     }
 
 

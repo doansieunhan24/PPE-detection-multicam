@@ -12,7 +12,7 @@
 | Le2i | TODO(verify) | TODO(verify) | |
 | UR Fall | https://fenix.ur.edu.pl/~mkepski/ds/uf.html | **CC BY-NC-SA 4.0** (trang dataset, kiểm 2026-10-25); trích Kwolek & Kępski, CMPB 117(3) 2014 | 30 fall (cam0 ngang sàn + cam1 trần) + 40 ADL (cam0). mp4 depth\|RGB 640×240 @30 fps, RGB 320×240. Nhãn từng frame −1/0/1 (`urfall-cam0-*.csv`). `tools/urfall_prepare.py` |
 | CAUCAFall | TODO(verify) | TODO(verify) | |
-| Multiple Cameras Fall (Montréal) | TODO(verify) | TODO(verify) | |
+| Multiple Cameras Fall (Montréal) | https://www.iro.umontreal.ca/~labimage/Dataset/ (+ Erratum-MCF.pdf, 2025-11-28) | Trang chỉ yêu cầu trích dẫn TR 1350 (Auvinet et al., DIRO 2010); **license không ghi, TODO(verify)** | 24 scenario × 8 cam treo tường 2.8 m, 720×480, **30 fps thật** (header AVI ghi 120; đo tốc độ đi 1.1 m/s ở 30 fps). 22 scenario có ngã (23 cú), 23–24 chỉ confounder. Delay khớp số frame ở 23/24 scenario; chute24 cam8 lệch nên bỏ. `tools/mcfd_prepare.py` |
 
 ## Log
 

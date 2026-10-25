@@ -47,3 +47,17 @@ def test_single_actor_keeps_most_confident():
 def test_in_split():
     assert in_split("fall-03", "val") and not in_split("fall-03", "test")
     assert in_split("adl-12", "test") and in_split("adl-12", "all")
+
+
+def test_score_multiple_falls_and_span():
+    gt = {
+        "chute04": {
+            "kind": "fall",
+            "fps": 30,
+            "span_ms": [0, 20000],
+            "falls": [[2000, 4000], [12000, 15000]],
+        },
+    }
+    r = score({"chute04": {"alerts": [3000, 3500, 13000]}}, gt, delta_ms=1000)
+    assert (r["tp"], r["fp"], r["fn"]) == (2, 1, 0)  # second alert in episode 1 is extra
+    assert r["duration_s"] == 20.0 and in_split("chute04", "test")
