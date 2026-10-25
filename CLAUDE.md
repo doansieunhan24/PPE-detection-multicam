@@ -427,7 +427,7 @@ else:                    state = state_{t−1}        # hysteresis
 | P8 | 12–14 | Ablation, sensitivity, FPS bench, (optional) Jetson Orin | Toàn bộ bảng/biểu đồ trong `eval/reports/` |
 | P9 | 14–16 | Viết thuyết minh, slide, video demo | — |
 
-**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (association đã kiểm chứng trên WILDTRACK) (fusion, baselines, association, behavior rule-based, alert store/Telegram/dashboard, evidence clip offline). Chờ dữ liệu C2 (P4) và Docker/DeepStream (P0). Chi tiết: `process/STATUS.md`.
+**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (association đã kiểm chứng trên WILDTRACK). Chuỗi xử lý C2 (session_check → nhãn → baselines/ablation/sensitivity) đã chạy thử từ đầu đến cuối. Chờ dữ liệu C2 (P4) và quyền Docker trong WSL (P0, DS 7.1). Chi tiết: `process/STATUS.md`.
 
 ---
 
@@ -494,7 +494,7 @@ pytest -q && ruff check src eval tools
 |---|---|---|
 | 2026-10-21 | Chốt contribution C1 (visibility-aware multi-view PPE fusion + UNKNOWN), C2 (dataset đa góc), C3 (hệ thống DS) | GVHD yêu cầu challenge + contribution riêng |
 | 2026-10-21 | Giữ tracking per-cam, bỏ appearance Re-ID, dùng ground-plane association | Re-ID kém với đồng phục; homography tái dùng cho vùng cấm |
-| — | DeepStream version: `TODO` | |
+| 2026-10-25 | DeepStream version: **đề xuất 7.1** (`7.1-triton-multiarch`), chưa chốt đến khi P0 chạy được | Docs "DeepStream On WSL" 7.1 hỗ trợ Ubuntu 22.04 (distro WSL hiện có); từ 8.0 trở đi yêu cầu Ubuntu 24.04 |
 | 2026-10-21 | GPU dev: RTX 4060 Laptop 8 GB, Windows 11 + WSL2 Ubuntu-22.04 | Máy hiện có. DeepStream phải chạy qua WSL2/Docker hoặc máy Linux — TODO(verify) hỗ trợ WSL2 |
 | 2026-10-21 | Thư mục repo thực tế là `ppe_de/` (package name `ppe-multicam`) | Tên trong mục 5 chỉ là tên package |
 | 2026-10-21 | **§7.5 chuẩn hoá theo Δt** (`dt_weighting`, mặc định bật): `S_t = λS + Δt·E`, `Ω_t = λΩ + Δt·W` → Ω hội tụ ≈ W·τ (visibility-giây), không phụ thuộc FPS. **Chờ người dùng xác nhận** | Công thức gốc cộng theo frame ⇒ Ω ≈ W·fps·τ: ở 25 fps v=0.05 đã vượt θ_obs=1 → UNKNOWN gần như không bao giờ xảy ra. Có test minh hoạ (`tests/test_fusion.py`). Có thể tắt cờ để so sánh |
@@ -508,6 +508,11 @@ pytest -q && ruff check src eval tools
 | 2026-10-22 | Association eval trên **WILDTRACK** (`eval/eval_association.py`, `tools/wildtrack_*.py`); tách `src/association/associator.py` dùng chung cho engine và eval | Có số liệu association trên dữ liệu đa cam thật trước C2 |
 | 2026-10-22 | `association.fov_margin_m = 0.5`: FOV gate có dung sai quanh polygon | Người bị cắt ở mép ảnh có điểm chân nằm ngay ngoài FOV. WILDTRACK oracle: pairwise recall 0.940 → 0.973 |
 | 2026-10-22 | **§7.1 foot point = đáy bbox** (`association.foot_point: bbox_bottom`, có thể đổi lại `ankles`). **Chờ người dùng xác nhận** | Ankle cao hơn sàn khoảng 8–10 cm, homography đẩy điểm ra xa. WILDTRACK: sai số sàn median 0.68 m (ankle) → 0.23 m (bbox), pairwise F1 0.37 → 0.78 |
+| 2026-10-25 | Video file: timestamp theo **pts** (`perception.file_timestamps: pts`) | Điện thoại quay VFR. Video tổng hợp: tính theo index lệch 2.4 s sau 150 frame |
+| 2026-10-25 | `cameras.yaml` / `zones.yaml` đặt trong thư mục JSONL của session ghi đè `configs/`; ngưỡng luôn lấy từ `configs/` | Mỗi session C2 có offset (và có thể cả calibration/zone) riêng |
+| 2026-10-25 | **§7.1 bbox bị cắt mép dưới:** cặp có obs bị cắt dùng gate `association.d_max_truncated_m` (1.2 m), cost = khoảng cách/gate; vị trí sàn của cụm lấy từ obs không bị cắt. **Chờ người dùng xác nhận** | WILDTRACK: sai số sàn median của box bị cắt 0.61–0.77 m, so với 0.09–0.23 m khi không bị cắt; oracle F1 0.982 → 0.985, count MAE 1.09 → 0.92 |
+| 2026-10-25 | Giữ pose imgsz 960 (không dùng 1280) | WILDTRACK 1280: det recall +5 điểm nhưng pair F1 0.786 → 0.741, count MAE 3.35 → 7.04 |
+| 2026-10-25 | Calibration báo cáo sai số **leave-one-out** (`loo_error_rms_m`) | RMS in-sample lạc quan khi chỉ có 6–8 điểm |
 | — | Số cam / loại cam / có Jetson Orin không: `TODO` | |
 
 ---
@@ -529,4 +534,6 @@ pytest -q && ruff check src eval tools
 - Association phụ thuộc recall detection: trong đám đông dày (WILDTRACK) YOLO-pose chỉ bắt được khoảng 44 % box GT, nên đếm người bị thiếu.
 - Không phân biệt được giày bảo hộ với giày thường ở khoảng cách xa (giới hạn của dataset SH17).
 - Dữ liệu té ngã là té giả, có thể khác té thật.
+- Người bị cắt chân ở mép dưới ảnh (đứng sát cam đặt thấp) có điểm sàn sai khoảng 0.6–0.8 m. Chỉ giảm được tác động (gate riêng, ưu tiên cam khác), không sửa được vị trí.
+- Offline backend (Ultralytics) không đạt real-time cho đa luồng (khoảng 16 fps tổng ở 1080p trên RTX 4060 Laptop). Real-time phụ thuộc DeepStream.
 - Bộ tự thu có quy mô nhỏ, chưa phải môi trường công nghiệp thật (nếu đúng như vậy).
