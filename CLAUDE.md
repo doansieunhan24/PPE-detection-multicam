@@ -516,6 +516,7 @@ pytest -q && ruff check src eval tools
 | 2026-10-25 | Lịch sử behavior (drop hông, keypoint trước) theo `(cam, global_id)` thay vì `(cam, track_id)`; `fall.hold_s` 0.5 → 0.2 | UR Fall: tracker đổi ID lúc ngã làm mất drop; hold 0.2 tune trên val (số lẻ), test F1 0.667 → 0.743 nhưng FA/giờ 57.8 → 134.8 |
 | 2026-10-25 | `fall.fusion: vmean` (§7.7) giữ nguyên, thêm `max` làm ablation. **Hỏi người dùng** có thêm trọng số theo mức hữu ích của góc nhìn không | UR Fall cam0 + cam1 trần: vmean recall 0.533 < cam0 0.733 |
 | 2026-10-26 | `fall.drop_ratio` 0.3 → 0.2; giữ `fall.fusion: vmean` | Val MCFD + UR Fall. MCFD test: 8 cam vmean F1 0.696 so với 1 cam 0.474, max 0.560. Cam top-down (UR Fall cam1) làm vmean giảm, đề xuất loại cam đó khỏi phần fuse fall (chờ người dùng) |
+| 2026-10-26 | Biến thể fall học `fall.method: seq` (1D-CNN trên chuỗi skeleton 1.5 s), mặc định vẫn `rule` | Thay ST-GCN bằng model nhẹ hơn vì dữ liệu ít. Train chỉ trên split val; MCFD test 8 cam F1 0.762 so với 0.696 (3 seed); UR Fall một cam không ổn định |
 | — | Số cam / loại cam / có Jetson Orin không: `TODO` | |
 
 ---

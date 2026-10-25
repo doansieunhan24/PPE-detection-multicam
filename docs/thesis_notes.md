@@ -49,3 +49,4 @@
 - Bảng chính cho §7.7: số cam 1 / 2 / 4 / 8 × vmean / max (MCFD test). 8 cam vmean F1 0.696 so với 0.474 của một cam, FA/giờ thấp hơn. Có thể vẽ biểu đồ F1 theo số cam, kèm error bar.
 - Thảo luận: visibility là điều kiện cần chứ không đủ. Một góc nhìn phải vừa *thấy được* vừa *có thông tin* với đại lượng cần đo. Với PPE (C1) hai điều này trùng nhau (thấy rõ đầu thì biết có mũ), còn với tư thế thì không (cam top-down thấy rõ nhưng không phân biệt được đứng với nằm). UR Fall cam1 là phản ví dụ cụ thể.
 - Phương pháp: phải đo fps thật của dataset (header AVI của MCFD ghi sai 120 fps). Nếu dùng sai thì mọi ngưỡng tính theo giây (hold, drop window) sai theo hệ số 4.
+- **Rule vs học (2026-10-26):** 1D-CNN trên skeleton, train chỉ trên split val, cho MCFD 8 cam F1 0.762 (FA 12.7/giờ) so với rule 0.696 (38.2/giờ), ổn định qua 3 seed. Trên UR Fall một cam thì kết quả phụ thuộc seed. Nên báo cáo theo seed, không chọn seed tốt nhất.

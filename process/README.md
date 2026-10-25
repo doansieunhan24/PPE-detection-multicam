@@ -44,3 +44,4 @@ Mỗi session làm việc có một file. Claude **đọc lại thư mục này 
 | 2026-10-25 | [2026-10-25_s05.md](2026-10-25_s05.md) | Chuẩn bị nhận C2 (pts/VFR, session_check, nhãn từ phiếu, config theo session), bbox bị cắt, LOO calibration, sensitivity, bench FPS, probe DS, hướng dẫn P0 |
 | 2026-10-25 | [2026-10-25_s06.md](2026-10-25_s06.md) | Fall trên UR Fall: sửa lịch sử theo global id, hold 0.2 (test F1 0.743), fuse theo v thua cam0 |
 | 2026-10-26 | [2026-10-26_s07.md](2026-10-26_s07.md) | Fall đa góc trên MCFD: 8 cam vmean F1 0.696 so với 1 cam 0.474; drop_ratio 0.2; cam top-down làm hỏng vmean (UR Fall) |
+| 2026-10-26 | [2026-10-26_s08.md](2026-10-26_s08.md) | Fall học (1D-CNN skeleton): MCFD 8 cam F1 0.762 so với rule 0.696, FA giảm khoảng 3 lần; UR Fall phụ thuộc seed |

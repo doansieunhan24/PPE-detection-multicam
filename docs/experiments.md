@@ -280,3 +280,22 @@ UR Fall (cấu hình cuối): cam0 test P/R/F1 0.682/1.000/0.811, FA 134.8/giờ
   - **vmean (§7.7) tốt nhất khi mọi góc nhìn đều có thông tin** (MCFD, cam treo cao nhìn xiên). **Cam nhìn thẳng từ trên xuống thì làm hỏng vmean** (UR Fall cam1): rule tư thế không có nghĩa từ góc đó, nhưng v vẫn cao. Nên dùng vmean và loại cam top-down khỏi phần fuse fall (đề xuất, chưa làm, **chờ người dùng**).
   - Số mẫu nhỏ: 12 cú ngã ở test MCFD, 15 ở test UR Fall. Chênh lệch 1–2 sự kiện là trong biên nhiễu; std giữa các tổ hợp cam cũng lớn.
   - Điểm nghẽn còn lại: recall detection lúc nằm (59 %) trên ảnh góc rộng bị méo, và rule drop. Bước tiếp theo nếu cần là ST-GCN hoặc mô hình học trên chuỗi skeleton.
+
+### 2026-10-26 — Fall học từ chuỗi skeleton (`fall.method: seq`) so với rule (commit `b358974`)
+- **Model:** feature mỗi frame (`src/behavior/seq_features.py`): 17 kpt chuẩn hoá theo tâm/chiều cao bbox, tỉ lệ bbox, vận tốc dọc, dh, mask. Cửa sổ 45 frame (1.5 s). 1D-CNN giãn (dilated) 3 tầng, pool mean+max. BCE có pos_weight, lật ngang làm augmentation, 30 epoch, Adam 1e-3.
+- **Dữ liệu train** (`training/fall/train_seq.py`): **chỉ split val** (sequence lẻ) của UR Fall + MCFD, mọi cam: 27,554 cửa sổ từ 47 cặp (sequence, cam), 9.6 % dương. Test (số chẵn) không dùng khi train. `seq_threshold` cố định trước là 0.5, hold 0.2, fusion giữ như rule. Không tune gì trên test.
+- **Kết quả test** (3 seed: 0 / 1 / 2):
+
+| Test | Rule | Seq seed 0 | Seq seed 1 | Seq seed 2 |
+|---|---|---|---|---|
+| UR Fall cam0, F1 (FA/giờ) | 0.811 (134.8) | 0.828 (38.5) | 0.769 (173.4) | 0.667 (134.8) |
+| MCFD 8 cam vmean, F1 (FA/giờ) | 0.696 (38.2) | 0.762 (12.7) | 0.762 (12.7) | 0.762 (12.7) |
+| MCFD 4 cam vmean, F1 | 0.605 ± 0.189 | 0.779 ± 0.045 | 0.786 ± 0.035 | 0.827 ± 0.053 |
+| MCFD 1 cam, F1 | 0.474 ± 0.201 | 0.634 ± 0.147 | 0.620 ± 0.142 | 0.630 ± 0.170 |
+
+  (MCFD: trung bình ± std trên các tổ hợp cam, report `eval/reports/fall/seq_s*_mcfd_test_subsets`.)
+- **Kết luận:**
+  - Trên MCFD (đa cam, cam treo cao), seq **tốt hơn rule ổn định ở mọi seed và mọi số cam**, FA/giờ giảm khoảng 3 lần. Latency 8 cam cũng giảm từ 1.9 s xuống khoảng 0.7–0.9 s.
+  - Với seq, vmean luôn tốt hơn max: score đã được hiệu chỉnh hơn nên phép trung bình có ý nghĩa hơn.
+  - Trên UR Fall một cam, seq **không** tốt hơn rule một cách tin cậy (F1 0.667–0.828 tuỳ seed), vì dữ liệu train ít (15 cảnh té UR Fall ở split val). Không chọn seed hay ensemble sau khi xem test.
+  - Mặc định vẫn là `method: rule` (§7.7 baseline). seq là biến thể; nếu dùng thì nên train lại có thêm C2.
