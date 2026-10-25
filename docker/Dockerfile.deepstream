@@ -1,6 +1,6 @@
 # DeepStream perception container (CLAUDE.md §8, D4: perception only, metadata → JSONL).
-# TODO(verify): pick ONE DeepStream 7.x tag matching the host driver/CUDA and record it in the
-# Decision Log; check https://catalog.ngc.nvidia.com/orgs/nvidia/containers/deepstream
+# DeepStream 7.1: official WSL2 support on Ubuntu 22.04 (the dev WSL distro), see docker/README.md.
+# TODO(verify) on first run; record in CLAUDE.md §15 once it works.
 ARG DS_TAG=7.1-triton-multiarch
 FROM nvcr.io/nvidia/deepstream:${DS_TAG}
 
