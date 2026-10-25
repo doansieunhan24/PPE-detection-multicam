@@ -72,6 +72,20 @@ def test_fall_detected_then_immobile():
     assert all(a.level == 3 for a in alerts)
 
 
+def test_fall_survives_track_id_switch():
+    """Trackers often re-ID during a fall; the drop history follows the global id."""
+    eng = _engine()
+    alerts = []
+    for ts in range(0, 2000, 40):
+        alerts += eng.step({"cam1": _frame(ts, [_p(1, _upright())])}, ts, {("cam1", 1): 7}, {})
+    for ts in range(2000, 2400, 40):
+        b, k = _upright(top=200 + (ts - 2000) / 400 * 300)
+        alerts += eng.step({"cam1": _frame(ts, [_p(1, (b, k))])}, ts, {("cam1", 1): 7}, {})
+    for ts in range(2400, 4000, 40):  # new track id 2, same global id 7
+        alerts += eng.step({"cam1": _frame(ts, [_p(2, _lying())])}, ts, {("cam1", 2): 7}, {})
+    assert [a.type for a in alerts].count(AlertType.FALL) == 1
+
+
 def test_lying_without_drop_is_not_a_fall():
     eng = _engine()
     alerts = []

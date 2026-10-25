@@ -9,9 +9,10 @@ fall:
   drop_window_s: 1.0          # ... within this window → "fall motion"
   drop_memory_s: 3.0          # a drop counts for this long after it happened
   no_drop_factor: 0.5         # lying pose without a recent drop (already lying, sitting down slowly)
+  fusion: vmean               # vmean (§7.7, visibility-weighted mean) | max (ablation)
   h_ref_px: 96                # whole-body visibility size reference for multi-view fusion
   score_threshold: 0.6        # fused score; lying without drop (≤ 0.5) never alerts alone
-  hold_s: 0.5
+  hold_s: 0.2                 # UR Fall val (odd seqs): 0.5 → 0.2 recall 0.27 → 0.60, same FA; falls end soon after lying
   seq_len: 45                 # frames, for the learned (ST-GCN) variant
 
 immobility:

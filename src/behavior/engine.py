@@ -60,7 +60,9 @@ class BehaviorEngine:
         self.immobile_alerter = EpisodeAlerter(int(cfg["immobility"]["T_immobile_s"] * 1000), cd)
         self.intr_alerter = EpisodeAlerter(int(cfg["intrusion"]["T_intr_s"] * 1000), cd)
         self.crowd_alerter = EpisodeAlerter(int(cfg["crowd"]["T_s"] * 1000), cd)
-        self.tracks: dict[PersonKey, _TrackHist] = {}
+        # per (cam_id, global_id), not (cam_id, track_id): trackers often switch IDs during the
+        # fast motion of a fall, which would erase the hip-drop history (UR Fall, s05)
+        self.tracks: dict[tuple[str, int], _TrackHist] = {}
         self.last_fall_ms: dict[int, int] = {}
 
     # --- per-camera fall score ------------------------------------------------------------
@@ -71,7 +73,7 @@ class BehaviorEngine:
         ang = torso_angle_deg(p.kpts, f["kpt_conf_min"])
         return s_ar if ang is None else max(s_ar, _ramp(ang, *f["angle_deg"]))
 
-    def cam_fall_score(self, key: PersonKey, p: PersonDet, ts_ms: int) -> float:
+    def cam_fall_score(self, key: tuple[str, int], p: PersonDet, ts_ms: int) -> float:
         f = self.cfg["fall"]
         h = self.tracks.setdefault(key, _TrackHist())
         hy = hip_y(p.kpts, f["kpt_conf_min"])
@@ -123,15 +125,18 @@ class BehaviorEngine:
         per_gid: dict[int, list[tuple[str, PersonDet, float, float]]] = {}
         for cam, fr in group.items():
             for p in fr.persons:
-                key = (cam, p.track_id)
-                s = self.cam_fall_score(key, p, ts_ms)
+                gid = gid_of[(cam, p.track_id)]
+                s = self.cam_fall_score((cam, gid), p, ts_ms)
                 v = body_visibility(p.kpts, p.bbox, f["h_ref_px"])
-                per_gid.setdefault(gid_of[key], []).append((cam, p, s, v))
+                per_gid.setdefault(gid, []).append((cam, p, s, v))
 
         for gid, obs in per_gid.items():
             cams = [c for c, *_ in obs]
-            w = sum(v for *_, v in obs)
-            fused = sum(s * v for _, _, s, v in obs) / w if w > 0 else 0.0
+            if f.get("fusion", "vmean") == "max":  # ablation: most confident view decides
+                fused = max(s for _, _, s, _ in obs)
+            else:  # §7.7: visibility-weighted mean
+                w = sum(v for *_, v in obs)
+                fused = sum(s * v for _, _, s, v in obs) / w if w > 0 else 0.0
             start = self.fall_alerter.update(gid, fused >= f["score_threshold"], ts_ms)
             if start is not None:
                 self.last_fall_ms[gid] = ts_ms
@@ -140,7 +145,7 @@ class BehaviorEngine:
             # immobility: the best-seen camera decides whether the body moved this frame;
             # the alerter's hold time (T_immobile) measures how long it stayed still
             cam, p, _, _ = max(obs, key=lambda o: o[3])
-            h = self.tracks[(cam, p.track_id)]
+            h = self.tracks[(cam, gid)]
             disp = mean_kpt_displacement(h.prev_kpts or [], p.kpts)
             h.prev_kpts = list(p.kpts)
             bh = max(1.0, p.bbox[3] - p.bbox[1])
