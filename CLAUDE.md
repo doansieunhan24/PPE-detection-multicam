@@ -343,6 +343,7 @@ else:                    state = state_{t−1}        # hysteresis
 - **Tracker:** NvDCF (`config_tracker_NvDCF_perf.yml`) làm mặc định, IOU dùng khi cần tiết kiệm. Track ID chỉ duy nhất **trong từng source**.
 - **Probe:** đặt sau SGIE. Trong probe **chỉ copy metadata ra dict rồi đẩy vào queue**, không xử lý nặng (sẽ block pipeline). Ghi JSONL hoặc publish ZMQ ở thread riêng.
 - **Toạ độ:** metadata trả theo độ phân giải của streammux. Convert về độ phân giải gốc của từng cam trước khi ghi JSONL.
+- **RTSP trong WSL2 phải dùng TCP** (`select-rtp-protocol=4` ở cả deepstream-app và `nvurisrcbin`, đã kiểm bằng gst-inspect DS 7.1): RTP/UDP lỗi IPv6 `Invalid address family`.
 - **RTSP simulation:** `mediamtx` + `ffmpeg -re -stream_loop -1 -i camX.mp4 -c copy -f rtsp rtsp://localhost:8554/camX` (script ở `tools/rtsp_sim.sh`).
 - **Đo FPS:** dùng `GST_DEBUG` hoặc probe đếm frame/giây theo từng source. Đo latency = `ts output alert − ts frame capture`.
 
@@ -427,7 +428,7 @@ else:                    state = state_{t−1}        # hysteresis
 | P8 | 12–14 | Ablation, sensitivity, FPS bench, (optional) Jetson Orin | Toàn bộ bảng/biểu đồ trong `eval/reports/` |
 | P9 | 14–16 | Viết thuyết minh, slide, video demo | — |
 
-**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (association đã kiểm chứng trên WILDTRACK). Chuỗi xử lý C2 (session_check → nhãn → baselines/ablation/sensitivity) đã chạy thử từ đầu đến cuối. P6: event metrics cho fall (UR Fall + MCFD), intrusion và crowd (WILDTRACK); immobility chờ C2. Chờ dữ liệu C2 (P4) và quyền Docker trong WSL (P0, DS 7.1). Chi tiết: `process/STATUS.md`.
+**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (association đã kiểm chứng trên WILDTRACK). Chuỗi xử lý C2 (session_check → nhãn → baselines/ablation/sensitivity) đã chạy thử từ đầu đến cuối. P6: event metrics cho fall (UR Fall + MCFD), intrusion và crowd (WILDTRACK); immobility chờ C2. P0 xong (DS 7.1 trong WSL2, 3 RTSP ~30 fps/stream với model mẫu). Chờ dữ liệu C2 (P4); tiếp theo là đưa YOLO-pose + SGIE PPE vào DeepStream. Chi tiết: `process/STATUS.md`.
 
 ---
 
@@ -494,8 +495,8 @@ pytest -q && ruff check src eval tools
 |---|---|---|
 | 2026-10-21 | Chốt contribution C1 (visibility-aware multi-view PPE fusion + UNKNOWN), C2 (dataset đa góc), C3 (hệ thống DS) | GVHD yêu cầu challenge + contribution riêng |
 | 2026-10-21 | Giữ tracking per-cam, bỏ appearance Re-ID, dùng ground-plane association | Re-ID kém với đồng phục; homography tái dùng cho vùng cấm |
-| 2026-10-25 | DeepStream version: **đề xuất 7.1** (`7.1-triton-multiarch`), chưa chốt đến khi P0 chạy được | Docs "DeepStream On WSL" 7.1 hỗ trợ Ubuntu 22.04 (distro WSL hiện có); từ 8.0 trở đi yêu cầu Ubuntu 24.04 |
-| 2026-10-21 | GPU dev: RTX 4060 Laptop 8 GB, Windows 11 + WSL2 Ubuntu-22.04 | Máy hiện có. DeepStream phải chạy qua WSL2/Docker hoặc máy Linux — TODO(verify) hỗ trợ WSL2 |
+| 2026-10-25 | DeepStream version: **chốt 7.1** (`7.1-triton-multiarch`); P0 chạy được 2026-10-26 (3 RTSP ~30 fps/stream, `docker/README.md`) | Docs "DeepStream On WSL" 7.1 hỗ trợ Ubuntu 22.04 (distro WSL hiện có); từ 8.0 trở đi yêu cầu Ubuntu 24.04 |
+| 2026-10-21 | GPU dev: RTX 4060 Laptop 8 GB, Windows 11 + WSL2 Ubuntu-22.04 | Máy hiện có. DeepStream 7.1 chạy qua Docker trong WSL2 (đã kiểm chứng 2026-10-26) |
 | 2026-10-21 | Thư mục repo thực tế là `ppe_de/` (package name `ppe-multicam`) | Tên trong mục 5 chỉ là tên package |
 | 2026-10-21 | **§7.5 chuẩn hoá theo Δt** (`dt_weighting`, mặc định bật): `S_t = λS + Δt·E`, `Ω_t = λΩ + Δt·W` → Ω hội tụ ≈ W·τ (visibility-giây), không phụ thuộc FPS. **Đã xác nhận 2026-10-26** | Công thức gốc cộng theo frame ⇒ Ω ≈ W·fps·τ: ở 25 fps v=0.05 đã vượt θ_obs=1 → UNKNOWN gần như không bao giờ xảy ra. Có test minh hoạ (`tests/test_fusion.py`). Có thể tắt cờ để so sánh |
 | 2026-10-21 | Schema thêm `PersonDet.ppe_checked` | Phân biệt "detector không chạy" (không có bằng chứng) với "chạy mà không thấy PPE" (p_neg) |

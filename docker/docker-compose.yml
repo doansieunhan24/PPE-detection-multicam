@@ -2,7 +2,7 @@
 # Requires Docker with the NVIDIA container toolkit (on Windows: Docker Desktop + WSL2).
 services:
   mediamtx:                       # RTSP server for simulated cameras (tools/rtsp_sim.sh)
-    image: bluenviron/mediamtx:latest   # TODO(verify): pin a version tag
+    image: bluenviron/mediamtx:1.9.3-ffmpeg   # checked 2026-10-26 (P0); tools/rtsp_sim.sh uses the same tag
     ports: ["8554:8554"]
 
   deepstream:

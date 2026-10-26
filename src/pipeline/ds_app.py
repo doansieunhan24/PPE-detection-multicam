@@ -101,7 +101,11 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--mux", default="1920x1080")
     ap.add_argument("--pgie", default="configs/deepstream/pgie_yolo_pose.txt")
     ap.add_argument("--sgie", default="configs/deepstream/sgie_ppe.txt")
-    ap.add_argument("--tracker", default="configs/deepstream/tracker_nvdcf.yml")
+    # NVIDIA's config (proprietary, not in this repo), see configs/deepstream/tracker_nvdcf.yml
+    ap.add_argument(
+        "--tracker",
+        default="/opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/config_tracker_NvDCF_perf.yml",
+    )
     args = ap.parse_args(argv)
     setup_logging()
 
@@ -137,6 +141,9 @@ def main(argv: list[str] | None = None) -> None:
     )
     for i, c in enumerate(cams):
         src = make("nvurisrcbin", f"src{i}", uri=c["uri"])
+        if c["uri"].startswith("rtsp://"):
+            # 4 = rtp-tcp: RTP over UDP fails in WSL2 (IPv6 udpsink), docker/README.md
+            src.set_property("select-rtp-protocol", 4)
         sinkpad = mux.request_pad_simple(f"sink_{i}")
         src.connect("pad-added", lambda _s, pad, sp=sinkpad: pad.link(sp))
     pgie = make("nvinfer", "pgie", config_file_path=args.pgie)

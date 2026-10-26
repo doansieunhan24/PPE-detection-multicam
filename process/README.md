@@ -46,3 +46,4 @@ Mỗi session làm việc có một file. Claude **đọc lại thư mục này 
 | 2026-10-26 | [2026-10-26_s07.md](2026-10-26_s07.md) | Fall đa góc trên MCFD: 8 cam vmean F1 0.696 so với 1 cam 0.474; drop_ratio 0.2; cam top-down làm hỏng vmean (UR Fall) |
 | 2026-10-26 | [2026-10-26_s08.md](2026-10-26_s08.md) | Fall học (1D-CNN skeleton): MCFD 8 cam F1 0.762 so với rule 0.696, FA giảm khoảng 3 lần; UR Fall phụ thuộc seed |
 | 2026-10-26 | [2026-10-26_s09.md](2026-10-26_s09.md) | Intrusion/crowd trên WILDTRACK: oracle F1 0.93/0.80, detector 0.60/0.46 |
+| 2026-10-26 | [2026-10-26_s10.md](2026-10-26_s10.md) | Xác nhận 4 thay đổi spec; P0 xong: DS 7.1 trong WSL2, 3 RTSP (TCP) ~30 fps/stream với model mẫu |

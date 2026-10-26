@@ -1,18 +1,24 @@
-# DeepStream (P0) — chưa chạy thử
+# DeepStream (P0) — đã chạy (2026-10-26)
 
-## Trạng thái máy dev (kiểm tra 2026-10-25)
-- WSL2 `Ubuntu-22.04`: có Docker Engine (daemon đang chạy), NVIDIA Container Toolkit (`nvidia-ctk`), runtime `nvidia` trong `/etc/docker/daemon.json`. `nvidia-smi` trong WSL thấy RTX 4060 Laptop, driver 591.66. Ổ còn 923 GB.
-- **Đang vướng:** user WSL chưa thuộc group `docker` (`permission denied ... docker.sock`). Cần sudo nên phải tự chạy (một lần):
-  ```bash
-  # trong WSL Ubuntu-22.04
-  sudo usermod -aG docker $USER
-  # rồi ở PowerShell: wsl --shutdown, mở lại WSL
-  docker run --rm hello-world
-  docker run --rm --gpus all nvcr.io/nvidia/deepstream:7.1-triton-multiarch nvidia-smi
-  ```
+## Trạng thái máy dev (kiểm tra 2026-10-26)
+- WSL2 `Ubuntu-22.04`: Docker 29.8.0, runtime `nvidia`, RTX 4060 Laptop, driver Windows 591.66. Trong container: DeepStream 7.1.0, CUDA runtime 12.6, TensorRT 10.3, cuDNN 9.0, `pyds` import được.
+- User WSL đã vào group `docker` (2026-10-26, `wsl -u root -- usermod -aG docker <user>`). Shell mở trước đó chưa nhận group: dùng `sg docker -c '...'` hoặc mở lại WSL.
+- Image dự án: `docker build -f docker/Dockerfile.deepstream -t ppe-ds:7.1 .` (`.dockerignore` loại toàn bộ context; repo được mount vào `/workspace` khi chạy).
+
+## P0: 3 RTSP → DeepStream (đã chạy)
+```bash
+# WSL, tại thư mục repo
+bash tools/rtsp_sim.sh data/raw/p0/        # cam1..3.mp4 = samples/streams/sample_1080p_h264.mp4 của DS 7.1
+docker run --rm --gpus all --network host     -v ds71_sample_models:/opt/nvidia/deepstream/deepstream-7.1/samples/models     -v "$PWD":/workspace -w /workspace --entrypoint bash ppe-ds:7.1     -c "deepstream-app -c configs/deepstream/p0_sample_3rtsp.txt"
+```
+- Volume `ds71_sample_models` giữ lại engine TensorRT INT8 của model mẫu (build mất ~55 s mỗi lần nếu không có volume).
+- `tools/rtsp_sim.sh` tự chạy mediamtx + ffmpeg trong Docker (`bluenviron/mediamtx:1.9.3-ffmpeg`, host network) nếu máy không có sẵn. Không chạy cùng service `mediamtx` của compose (trùng cổng 8554).
+- **RTSP phải dùng TCP** (`select-rtp-protocol=4`): trong WSL2, RTP/UDP lỗi `udpsink ... Invalid address family (got 10)` (IPv6) và chỉ chạy được sau 5 s tự chuyển sang TCP.
+- Kết quả (log `data/p0/bench_3rtsp.log`, 150 s, sink fakesink): mỗi stream ổn định **~30.0 fps** = fps nguồn (trung bình tích luỹ 31.17 do bù đầu chuỗi). Video tiled kiểm tra bằng mắt: `data/p0/tiled_3rtsp.mp4` (sink1, encoder NVENC chạy được trong WSL).
+- Đây mới là model mẫu của NVIDIA (resnet18 trafficcamnet) để kiểm tra stack; FPS với YOLO-pose + SGIE PPE đo ở bước sau. `nvidia-smi --query-gpu` không hỗ trợ trong WSL nên chưa có GPU util.
 
 ## Chọn version
-- **DeepStream 7.1** (`nvcr.io/nvidia/deepstream:7.1-triton-multiarch`). Theo trang chính thức "DeepStream On WSL" của 7.1: Windows 11, GPU GeForce/Quadro ở chế độ WDDM, **Ubuntu 22.04**, chỉ cài driver Windows (không cài driver Linux trong WSL). Bản 8.0 trở lên yêu cầu Ubuntu 24.04 trên WSL, khác với distro đang có. Driver đã kiểm chứng trong docs là 546.65; máy này dùng 591.66 (mới hơn, TODO(verify) chạy thật).
+- **DeepStream 7.1** (`nvcr.io/nvidia/deepstream:7.1-triton-multiarch`). Theo trang chính thức "DeepStream On WSL" của 7.1: Windows 11, GPU GeForce/Quadro ở chế độ WDDM, **Ubuntu 22.04**, chỉ cài driver Windows (không cài driver Linux trong WSL). Bản 8.0 trở lên yêu cầu Ubuntu 24.04 trên WSL, khác với distro đang có. Driver đã kiểm chứng trong docs là 546.65; máy này dùng 591.66, đã chạy thật được (P0, 2026-10-26).
 - Lệnh chạy theo docs 7.1:
   ```bash
   docker run -it --rm --privileged --net=host --gpus all -e DISPLAY=$DISPLAY -e CUDA_CACHE_DISABLE=0 \

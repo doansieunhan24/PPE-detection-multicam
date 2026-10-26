@@ -1,3 +1,5 @@
-# TODO(verify): copy config_tracker_NvDCF_perf.yml from
-# /opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/ of the chosen DS version
-# (its schema changes between versions; do not hand-write it).
+# Tracker config is NOT stored here: NVIDIA's config_tracker_NvDCF_perf.yml is proprietary
+# ("distribution ... prohibited without an express license agreement"). ds_app.py uses the copy
+# inside the DeepStream 7.1 image by default (checked 2026-10-26, P0 run):
+#   /opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/config_tracker_NvDCF_perf.yml
+# To tune it, copy that file to a gitignored path and pass --tracker <path>.

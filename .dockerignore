@@ -1,0 +1,3 @@
+# The repo is bind-mounted at /workspace at runtime (docker/docker-compose.yml); the image
+# build needs nothing from the context. Keeps data/ (tens of GB) out of the build context.
+*
