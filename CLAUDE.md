@@ -428,7 +428,7 @@ else:                    state = state_{t−1}        # hysteresis
 | P8 | 12–14 | Ablation, sensitivity, FPS bench, (optional) Jetson Orin | Toàn bộ bảng/biểu đồ trong `eval/reports/` |
 | P9 | 14–16 | Viết thuyết minh, slide, video demo | — |
 
-**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (association đã kiểm chứng trên WILDTRACK). Chuỗi xử lý C2 (session_check → nhãn → baselines/ablation/sensitivity) đã chạy thử từ đầu đến cuối. P6: event metrics cho fall (UR Fall + MCFD), intrusion và crowd (WILDTRACK); immobility chờ C2. P0 xong (DS 7.1 trong WSL2, 3 RTSP ~30 fps/stream với model mẫu). Chờ dữ liệu C2 (P4); tiếp theo là đưa YOLO-pose + SGIE PPE vào DeepStream. Chi tiết: `process/STATUS.md`.
+**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (association đã kiểm chứng trên WILDTRACK). Chuỗi xử lý C2 (session_check → nhãn → baselines/ablation/sensitivity) đã chạy thử từ đầu đến cuối. P6: event metrics cho fall (UR Fall + MCFD), intrusion và crowd (WILDTRACK); immobility chờ C2. P0 xong; P1/P2 phần DeepStream xong: YOLO11m-pose + NvDCF + SGIE PPE chạy trong DS 7.1, JSONL khớp backend offline, 3 cam 1080p đạt 26 fps/stream (4 cam 19.8). Chờ dữ liệu C2 (P4). Chi tiết: `process/STATUS.md`.
 
 ---
 
@@ -518,6 +518,9 @@ pytest -q && ruff check src eval tools
 | 2026-10-25 | `fall.fusion: vmean` (§7.7) giữ nguyên, thêm `max` làm ablation. **Hỏi người dùng** có thêm trọng số theo mức hữu ích của góc nhìn không | UR Fall cam0 + cam1 trần: vmean recall 0.533 < cam0 0.733 |
 | 2026-10-26 | `fall.drop_ratio` 0.3 → 0.2; giữ `fall.fusion: vmean` | Val MCFD + UR Fall. MCFD test: 8 cam vmean F1 0.696 so với 1 cam 0.474, max 0.560. Cam top-down (UR Fall cam1) làm vmean giảm, đề xuất loại cam đó khỏi phần fuse fall (chờ người dùng) |
 | 2026-10-26 | Biến thể fall học `fall.method: seq` (1D-CNN trên chuỗi skeleton 1.5 s), mặc định vẫn `rule` | Thay ST-GCN bằng model nhẹ hơn vì dữ liệu ít. Train chỉ trên split val; MCFD test 8 cam F1 0.762 so với 0.696 (3 seed); UR Fall một cam không ổn định |
+| 2026-10-26 | **DeepStream xuất bbox người của detector** (`ds_app --person-bbox detector`, fallback bbox tracker khi frame đó không detect) | Bbox NvDCF ở WILDTRACK 2 fps: pair F1 0.732 so với 0.818 (offline 0.810) |
+| 2026-10-26 | **SGIE crop nới `ppe.crop_pad`** bằng probe ở sink pad SGIE (giống lúc train và backend offline) | Không nới: mức khớp PPE với offline shoes 0.818, head 0.901; có nới 0.925 / 0.944 |
+| 2026-10-26 | Engine PGIE batch 4 dùng chung cho 1–4 cam (`ds_app` đặt batch-size = số cam); ONNX DS để ở `models/ds/` | Build engine pose mất khoảng 6 phút; layout ONNX của DeepStream-Yolo khác bản Ultralytics |
 | — | Số cam / loại cam / có Jetson Orin không: `TODO` | |
 
 ---
@@ -540,5 +543,5 @@ pytest -q && ruff check src eval tools
 - Không phân biệt được giày bảo hộ với giày thường ở khoảng cách xa (giới hạn của dataset SH17).
 - Dữ liệu té ngã là té giả, có thể khác té thật.
 - Người bị cắt chân ở mép dưới ảnh (đứng sát cam đặt thấp) có điểm sàn sai khoảng 0.6–0.8 m. Chỉ giảm được tác động (gate riêng, ưu tiên cam khác), không sửa được vị trí.
-- Offline backend (Ultralytics) không đạt real-time cho đa luồng (khoảng 16 fps tổng ở 1080p trên RTX 4060 Laptop). Real-time phụ thuộc DeepStream.
+- Offline backend (Ultralytics) không đạt real-time cho đa luồng (khoảng 16 fps tổng ở 1080p trên RTX 4060 Laptop). DeepStream đạt khoảng 80 fps tổng: real-time 25 fps tối đa 3 cam 1080p trên GPU laptop này (4 cam còn 19.8 fps/cam).
 - Bộ tự thu có quy mô nhỏ, chưa phải môi trường công nghiệp thật (nếu đúng như vậy).

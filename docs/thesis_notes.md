@@ -50,3 +50,8 @@
 - Thảo luận: visibility là điều kiện cần chứ không đủ. Một góc nhìn phải vừa *thấy được* vừa *có thông tin* với đại lượng cần đo. Với PPE (C1) hai điều này trùng nhau (thấy rõ đầu thì biết có mũ), còn với tư thế thì không (cam top-down thấy rõ nhưng không phân biệt được đứng với nằm). UR Fall cam1 là phản ví dụ cụ thể.
 - Phương pháp: phải đo fps thật của dataset (header AVI của MCFD ghi sai 120 fps). Nếu dùng sai thì mọi ngưỡng tính theo giây (hold, drop window) sai theo hệ số 4.
 - **Rule vs học (2026-10-26):** 1D-CNN trên skeleton, train chỉ trên split val, cho MCFD 8 cam F1 0.762 (FA 12.7/giờ) so với rule 0.696 (38.2/giờ), ổn định qua 3 seed. Trên UR Fall một cam thì kết quả phụ thuộc seed. Nên báo cáo theo seed, không chọn seed tốt nhất.
+
+## DeepStream so với backend Python (2026-10-26, `docs/experiments.md`)
+- Cùng model (YOLO11m-pose@960 + PPE M2@320), DeepStream 7.1 (TensorRT FP16, batch theo cam) đạt khoảng 80 fps tổng so với 16 fps của Ultralytics: **3 cam 1080p real-time** trên GPU laptop. Đây là lý do kỹ thuật cho việc chọn DeepStream (C3).
+- Hai backend xuất cùng schema JSONL (D4/D5) và cho kết quả association gần như nhau (pair F1 0.818 so với 0.810 trên WILDTRACK), nên mọi thí nghiệm offline vẫn đại diện cho hệ thống live.
+- Bài học khi nối: crop SGIE phải giống crop lúc train (nới 10%), và bbox xuất ra nên lấy từ detector chứ không phải tracker khi fps thấp. Cả hai đều có số liệu trước/sau.

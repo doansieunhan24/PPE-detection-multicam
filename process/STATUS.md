@@ -1,6 +1,6 @@
-# STATUS — cập nhật lần cuối 2026-10-26 (s10)
+# STATUS — cập nhật lần cuối 2026-10-26 (s11)
 
-**Phase hiện tại:** **P0 xong** (DeepStream 7.1 trong WSL2, 3 RTSP). P1 offline, P2 xong. Code P5–P7 xong và test được. Chuỗi xử lý C2 đã chạy thử từ đầu đến cuối (trên WILDTRACK). **Chờ dữ liệu C2 (P4).** Tiếp theo: đưa YOLO-pose + SGIE PPE vào DeepStream.
+**Phase hiện tại:** **P0, P1, P2 xong cả phần DeepStream** (YOLO11m-pose + NvDCF + SGIE PPE trong DS 7.1, JSONL khớp offline, 3 cam 1080p real-time). Code P5–P7 xong và test được. Chuỗi xử lý C2 đã chạy thử từ đầu đến cuối (trên WILDTRACK). **Chờ dữ liệu C2 (P4).**
 
 ## Đã xong
 - (s10) Người dùng xác nhận 4 thay đổi spec: dt_weighting, p calibration + theta_neg −0.5, foot_point = bbox_bottom, d_max_truncated_m = 1.2
@@ -15,8 +15,8 @@
 - Association trên WILDTRACK: oracle pair F1 0.985, YOLO11m-pose F1 0.786 (`docs/experiments.md`)
 - **Chuẩn bị nhận C2:** `tools/session_check.py` (VFR, offset + drift từ tắt/bật đèn, frame calibrate, cameras.yaml của session), `label_intervals convert` (phiếu ghi → intervals), calibrate với chỉ số gạch + sai số leave-one-out + FOV an toàn cho cam thấp
 - **P0** (s10): image `ppe-ds:7.1` (pyds), `tools/rtsp_sim.sh` (mediamtx Docker), `configs/deepstream/p0_sample_3rtsp.txt`: 3 RTSP qua TCP, model mẫu NVIDIA + NvDCF + tiler, **~30 fps mỗi stream** (= fps nguồn), video `data/p0/tiled_3rtsp.mp4`. Lệnh trong `docker/README.md`
-- Probe `ds_app.py` đã đối chiếu với DeepStream-Yolo-Pose nhưng **chưa chạy thật** (chưa export ONNX / build parser)
-- 141 test pass, ruff sạch (pytest cần `--basetemp` ghi được trên máy này)
+- **DS với model dự án** (s11, `f88ee71`): `ds_app.py` chạy được trên file; so khớp offline trên wt3: người recall/precision 0.837/0.873, keypoint lệch 0.9 % chiều cao, PPE agreement 0.92–0.99; association GT WILDTRACK pair F1 0.818 (offline 0.810). FPS: 1/2/3/4 stream → 67.7/40.6/**26.1**/19.8 fps mỗi stream (`eval/reports/bench_fps_ds_wt3`)
+- 146 test pass, ruff sạch (pytest cần `--basetemp` ghi được trên máy này)
 
 ## Đang dở
 - (không có)
@@ -28,8 +28,8 @@
 
 ## Ưu tiên tiếp theo
 1. Có C2: README bước 2–6 (`session_check` → `calibrate_homography` → `ultralytics_runner` → `label_intervals` → `run_baselines --ablations` → `run_sensitivity`), tune trên s01 (val), báo cáo trên s02/s03
-2. DeepStream phần dự án: build parser DeepStream-Yolo(-Pose), export ONNX (pose @960, PPE @320), chạy `ds_app.py`, so khớp JSONL DS với offline, `bench_fps` cho DS (1–4 stream, nguồn file)
+2. Demo live: `ds_app` với 3 RTSP + OSD/tiler, nối analytics qua JSONL/ZMQ, smart record (P7)
 3. Tune θ_obs/θ_pos/θ_neg, τ, T_alert, d_max, d_max_truncated trên C2 val
 
 ## Session gần nhất
-- [2026-10-26_s10.md](2026-10-26_s10.md) (trước đó: s05–s09)
+- [2026-10-26_s11.md](2026-10-26_s11.md) (trước đó: s05–s10)

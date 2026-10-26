@@ -317,3 +317,41 @@ UR Fall (cấu hình cuối): cam0 test P/R/F1 0.682/1.000/0.811, FA 134.8/giờ
 - Đếm người trong vùng rủi ro (detector): MAE 0.38–0.79 người/vùng; ở vài vùng bias âm tới −0.68 (đếm thiếu), so với oracle MAE ≤ 0.39.
 - **Kết luận:** logic vùng + association + alerter đúng khi detection đúng (oracle F1 0.93 / 0.80). Với detector thật, lỗi chủ yếu đến từ recall detection trong đám đông dày (det recall 0.436, xem mục association). Hai vùng cấm (F3, F6) bỏ sót toàn bộ. FP của oracle là do điểm chân dao động quanh mép vùng. WILDTRACK đông hơn nhiều so với kịch bản C2 (3 người), nên đây là trường hợp khó.
 - Giới hạn: 200 s, 2 fps; FA/giờ ngoại suy từ thời lượng ngắn nên dao động lớn.
+
+### 2026-10-26 — DeepStream 7.1 với model dự án: so khớp offline + FPS (commit `f88ee71`)
+- **Pipeline:** `src/pipeline/ds_app.py` trong `ppe-ds:7.1` (WSL2, RTX 4060 Laptop): nvurisrcbin ×N → streammux → YOLO11m-pose@960 FP16 (parser DeepStream-Yolo-Pose `2fa5bd8`) → NvDCF perf → PPE M2 @320 FP16 trên crop người (parser DeepStream-Yolo `2894bab`) → probe → JSONL. ONNX export bằng `tools/export_ds_onnx.py`.
+- **Dữ liệu:** `data/rehearsal/wt3` (WILDTRACK C1/C4/C6 ghép thành video 2 fps, MPEG-4, 400/398/400 frame). Tham chiếu là JSONL của backend offline đã có sẵn (`yolo11m-pose@960` + ByteTrack + M2 trên crop).
+- **Sửa trong lúc nối** (số trước/sau cùng đo bằng `eval.compare_backends`, chạy trước commit):
+  - PPE không được gắn vào người vì ghép theo `id()` của wrapper pyds → ghép theo `object_id`.
+  - Crop SGIE không nới `crop_pad` như lúc train → mức khớp PPE với offline: head 0.901 → 0.944, helmet 0.930 → 0.962, shoes 0.818 → 0.925.
+  - Bbox người lấy từ tracker NvDCF làm association kém (bảng dưới) → mặc định xuất bbox detector.
+- **So khớp DS vs offline** (`eval.compare_backends`, ghép người IoU ≥ 0.5 theo từng frame; report `eval/reports/backends/wt3_offline_vs_ds_*.json`):
+
+| Bbox xuất ra | Frame khớp / ts lệch | Người ref / DS | Recall / Precision | IoU TB | Keypoint lệch median / p90 (× chiều cao) | PPE agreement head / helmet / vest / shoes | Track (số / độ dài TB) |
+|---|---|---|---|---|---|---|---|
+| detector (mặc định) | 1198 / 0 | 9608 / 9208 | 0.837 / 0.873 | 0.874 | 0.009 / 0.018 | 0.948 / 0.963 / 0.987 / 0.922 | 289 / 31.9 (offline 398 / 24.1) |
+| tracker | 1198 / 0 | 9608 / 9208 | 0.829 / 0.865 | 0.872 | 0.009 / 0.018 | 0.948 / 0.963 / 0.987 / 0.924 | 289 / 31.9 |
+
+- **Association trên GT WILDTRACK** (`eval.eval_association --cams C1 C4 C6`, d_max 0.8, cam đổi tên cam1/2/3 → C1/C4/C6; report `eval/reports/backends/wt3_assoc_*.json`):
+
+| Input | det recall / precision | pair P / R / F1 | IDF1 (assoc-only) | count MAE | floor err median |
+|---|---|---|---|---|---|
+| Offline | 0.325 / 0.689 | 0.769 / 0.856 / 0.810 | 0.299 (0.677) | 6.81 | 0.202 m |
+| DS, bbox detector | 0.310 / 0.686 | 0.779 / 0.862 / 0.818 | 0.324 (0.758) | 7.41 | 0.240 m |
+| DS, bbox tracker | 0.297 / 0.657 | 0.658 / 0.824 / 0.732 | 0.309 (0.754) | 7.38 | 0.239 m |
+
+- **FPS theo số stream** (`eval.bench_fps_ds`, video wt3 lặp, không pacing, 60 s sau frame đầu, bỏ 30 frame warmup/stream; GPU util lấy từ bảng `nvidia-smi`, bộ nhớ là toàn GPU; report `eval/reports/bench_fps_ds_wt3`):
+
+| Stream | fps tổng | fps / stream | GPU util TB | GPU mem peak (MiB) | ≥ 25 fps |
+|---|---|---|---|---|---|
+| 1 | 67.7 | 67.7 | 68 % | 2504 | có |
+| 2 | 81.2 | 40.6 | 85 % | 2638 | có |
+| 3 | 78.3 | 26.1 | 88 % | 2757 | có |
+| 4 | 79.0 | 19.8 | 87 % | 2969 | không |
+
+  So với backend offline cùng video (`eval/reports/bench_fps_wildtrack1080`, `baaaeb4`): 15.6–16.7 fps tổng → DeepStream nhanh hơn khoảng 5 lần, **3 cam 1080p đạt real-time 25 fps** trên RTX 4060 Laptop.
+- **Kết luận:**
+  - Hai backend cho cùng schema và cùng kết quả ở mức hệ thống (association F1 0.818 so với 0.810). Khác biệt còn lại đến từ NMS (parser cố định IoU 0.45, offline 0.7), tracker (NvDCF giữ track dài hơn, ít track hơn ByteTrack) và FP16.
+  - Sai số vị trí sàn của DS cao hơn (0.240 so với 0.202 m) dù dùng bbox detector. Chưa rõ nguyên nhân (letterbox vuông 960×960 so với 960×544 của Ultralytics, FP16); cần kiểm tra lại trên C2.
+  - GPU đã bão hoà từ 2 stream (khoảng 80 fps tổng). Muốn thêm stream: YOLO11s-pose, INT8, hoặc `interval` > 0 cho PGIE (TODO, chưa đo).
+  - wt3 chỉ 2 fps nên tracker chạy ở điều kiện khó; trên C2 (25–30 fps) cần đo lại khác biệt tracker.
