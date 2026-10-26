@@ -233,8 +233,8 @@ ppe-multicam/
 
 ### 7.1 Foot point & homography (`geometry/`)
 
-- Foot point: nếu cả 2 ankle có `c > 0.5` thì lấy trung điểm 2 ankle, ngược lại lấy bottom-center của bbox.
-- Nếu bbox chạm mép dưới ảnh (`truncated_bottom`) thì foot point không tin được: hạ trọng số association, đánh dấu `floor_conf` thấp.
+- Foot point: bottom-center của bbox (`association.foot_point: bbox_bottom`, mặc định). Biến thể `ankles`: trung điểm 2 ankle nếu cả 2 có `c > 0.5` (ankle cao hơn sàn ~8–10 cm nên homography đẩy điểm ra xa, xem §15).
+- Nếu bbox chạm mép dưới ảnh (`truncated_bottom`) thì foot point không tin được: cặp có obs bị cắt dùng gate `association.d_max_truncated_m` (1.2 m), cost = khoảng cách/gate; vị trí sàn của cụm lấy từ obs không bị cắt.
 - `H` (3×3) map ảnh → sàn (mét), tính bằng `cv2.findHomography` từ ≥ 4 cặp điểm (khuyến nghị 6–10 điểm, RANSAC). Lưu reprojection error vào YAML. **Báo cáo sai số này trong thuyết minh.**
 - Mỗi cam có `fov_floor_polygon`: vùng sàn mà cam nhìn thấy. Chỉ ghép cặp người khi điểm nằm trong vùng giao FOV.
 
@@ -255,7 +255,7 @@ ppe-multicam/
 | feet | boots | bbox(ankles) mở rộng ngang, kéo xuống 0.5× | 12% dưới của person bbox |
 
 - `p_part` = max conf của PPE box đúng class có **containment** (diện tích giao / diện tích PPE box) ≥ 0.5 với ROI.
-- Không có box nào thì `p_part = p_neg` (mặc định 0.05). Giá trị này phải calibrate trên tập val.
+- `p` được hiệu chỉnh theo prior trung tính (`configs/p_calibration.yaml`, fit trên val) cho cả trường hợp có box và không có box (thay cho `p_neg = 0.05` + conf thô). Baseline B0–B3 dùng cờ "có box".
 - **Rule cầm mũ:** helmet box nằm gần wrist keypoints (khoảng cách < 0.15 × chiều cao người) và không chứa trong head ROI thì không tính cho head, chỉ log `held_helmet=true`.
 - Fallback ROI (thiếu kpt) thì nhân `v` thêm `fallback_penalty` (0.5).
 - (Giai đoạn sau) Feet: thay detector bằng **part classifier** trên crop độ phân giải cao (crop từ frame gốc, không phải từ input đã resize).
@@ -284,8 +284,8 @@ e_c   = v_c · logit(clip(p_c, 0.01, 0.99))          # bằng chứng từ cam c
 E_t   = Σ_c e_c                                     # tổng bằng chứng
 W_t   = Σ_c v_c                                     # tổng độ quan sát
 λ     = exp(−Δt / τ)                                # τ mặc định 2 s
-S_t   = λ·S_{t−1} + E_t
-Ω_t   = λ·Ω_{t−1} + W_t
+S_t   = λ·S_{t−1} + Δt·E_t                         # dt_weighting (mặc định bật)
+Ω_t   = λ·Ω_{t−1} + Δt·W_t                         # Ω ≈ W·τ (visibility-giây), không phụ thuộc FPS
 m_t   = S_t / max(Ω_t, ε)                           # log-odds trung bình có trọng số
 
 if   Ω_t < θ_obs:        state = UNKNOWN
@@ -497,20 +497,20 @@ pytest -q && ruff check src eval tools
 | 2026-10-25 | DeepStream version: **đề xuất 7.1** (`7.1-triton-multiarch`), chưa chốt đến khi P0 chạy được | Docs "DeepStream On WSL" 7.1 hỗ trợ Ubuntu 22.04 (distro WSL hiện có); từ 8.0 trở đi yêu cầu Ubuntu 24.04 |
 | 2026-10-21 | GPU dev: RTX 4060 Laptop 8 GB, Windows 11 + WSL2 Ubuntu-22.04 | Máy hiện có. DeepStream phải chạy qua WSL2/Docker hoặc máy Linux — TODO(verify) hỗ trợ WSL2 |
 | 2026-10-21 | Thư mục repo thực tế là `ppe_de/` (package name `ppe-multicam`) | Tên trong mục 5 chỉ là tên package |
-| 2026-10-21 | **§7.5 chuẩn hoá theo Δt** (`dt_weighting`, mặc định bật): `S_t = λS + Δt·E`, `Ω_t = λΩ + Δt·W` → Ω hội tụ ≈ W·τ (visibility-giây), không phụ thuộc FPS. **Chờ người dùng xác nhận** | Công thức gốc cộng theo frame ⇒ Ω ≈ W·fps·τ: ở 25 fps v=0.05 đã vượt θ_obs=1 → UNKNOWN gần như không bao giờ xảy ra. Có test minh hoạ (`tests/test_fusion.py`). Có thể tắt cờ để so sánh |
+| 2026-10-21 | **§7.5 chuẩn hoá theo Δt** (`dt_weighting`, mặc định bật): `S_t = λS + Δt·E`, `Ω_t = λΩ + Δt·W` → Ω hội tụ ≈ W·τ (visibility-giây), không phụ thuộc FPS. **Đã xác nhận 2026-10-26** | Công thức gốc cộng theo frame ⇒ Ω ≈ W·fps·τ: ở 25 fps v=0.05 đã vượt θ_obs=1 → UNKNOWN gần như không bao giờ xảy ra. Có test minh hoạ (`tests/test_fusion.py`). Có thể tắt cờ để so sánh |
 | 2026-10-21 | Schema thêm `PersonDet.ppe_checked` | Phân biệt "detector không chạy" (không có bằng chứng) với "chạy mà không thấy PPE" (p_neg) |
 | 2026-10-21 | Pose PGIE offline: `yolo11m-pose`, imgsz 960 | Trên vtest.avi (người ~70 px) imgsz 640 bỏ sót gần hết; 960 tăng ~3.7× số người phát hiện |
-| 2026-10-21 | Hiệu chỉnh p theo prior trung tính (`configs/p_calibration.yaml`, fit SH17 val) thay `p_neg=0.05` + conf thô; `theta_neg` −1.0 → −0.5; baseline B0–B3 dùng cờ "có box" (không dùng p đã hiệu chỉnh) | Đo trên SH17: không-box chỉ ≈ −1 log-LR, có box ≈ +3; p_neg 0.05 phóng đại bằng chứng âm. Tune lại trên C2 |
+| 2026-10-21 | Hiệu chỉnh p theo prior trung tính (`configs/p_calibration.yaml`, fit SH17 val) thay `p_neg=0.05` + conf thô; `theta_neg` −1.0 → −0.5; baseline B0–B3 dùng cờ "có box" (không dùng p đã hiệu chỉnh). **Đã xác nhận 2026-10-26** | Đo trên SH17: không-box chỉ ≈ −1 log-LR, có box ≈ +3; p_neg 0.05 phóng đại bằng chứng âm. Tune lại trên C2 |
 | 2026-10-21 | Bổ sung CHV cho helmet/vest; pseudo-label head/shoes/foot | SH17 quá ít helmet/vest |
 | 2026-10-22 | Detector chính = M2 (SH17+CHV crops, YOLO11s@320) `models/sh17chv_crop_y11s` | CHV test helmet AP50 0.957, vest 0.913 (M1: 0.890 / 0.794) |
 | 2026-10-22 | Part-ROI/containment tune trên val SH17+CHV (containment 0.2, head_up 1.0, head_expand 1.8, torso_expand 0.4, feet 0.12/0.1); hiệu chỉnh p chỉ trên v ≥ 0.6 | Tăng recall gán PPE 12–23 điểm trên test; GT ảnh đơn bị điều kiện theo visibility nên không fit được tác động của v |
 | 2026-10-22 | Giữ M2 (YOLO11s) thay vì M3 (YOLO11m) | M3 +2 điểm mAP50 SH17 nhưng ngang trên CHV, chậm ×1.64 |
 | 2026-10-22 | Association eval trên **WILDTRACK** (`eval/eval_association.py`, `tools/wildtrack_*.py`); tách `src/association/associator.py` dùng chung cho engine và eval | Có số liệu association trên dữ liệu đa cam thật trước C2 |
 | 2026-10-22 | `association.fov_margin_m = 0.5`: FOV gate có dung sai quanh polygon | Người bị cắt ở mép ảnh có điểm chân nằm ngay ngoài FOV. WILDTRACK oracle: pairwise recall 0.940 → 0.973 |
-| 2026-10-22 | **§7.1 foot point = đáy bbox** (`association.foot_point: bbox_bottom`, có thể đổi lại `ankles`). **Chờ người dùng xác nhận** | Ankle cao hơn sàn khoảng 8–10 cm, homography đẩy điểm ra xa. WILDTRACK: sai số sàn median 0.68 m (ankle) → 0.23 m (bbox), pairwise F1 0.37 → 0.78 |
+| 2026-10-22 | **§7.1 foot point = đáy bbox** (`association.foot_point: bbox_bottom`, có thể đổi lại `ankles`). **Đã xác nhận 2026-10-26** | Ankle cao hơn sàn khoảng 8–10 cm, homography đẩy điểm ra xa. WILDTRACK: sai số sàn median 0.68 m (ankle) → 0.23 m (bbox), pairwise F1 0.37 → 0.78 |
 | 2026-10-25 | Video file: timestamp theo **pts** (`perception.file_timestamps: pts`) | Điện thoại quay VFR. Video tổng hợp: tính theo index lệch 2.4 s sau 150 frame |
 | 2026-10-25 | `cameras.yaml` / `zones.yaml` đặt trong thư mục JSONL của session ghi đè `configs/`; ngưỡng luôn lấy từ `configs/` | Mỗi session C2 có offset (và có thể cả calibration/zone) riêng |
-| 2026-10-25 | **§7.1 bbox bị cắt mép dưới:** cặp có obs bị cắt dùng gate `association.d_max_truncated_m` (1.2 m), cost = khoảng cách/gate; vị trí sàn của cụm lấy từ obs không bị cắt. **Chờ người dùng xác nhận** | WILDTRACK: sai số sàn median của box bị cắt 0.61–0.77 m, so với 0.09–0.23 m khi không bị cắt; oracle F1 0.982 → 0.985, count MAE 1.09 → 0.92 |
+| 2026-10-25 | **§7.1 bbox bị cắt mép dưới:** cặp có obs bị cắt dùng gate `association.d_max_truncated_m` (1.2 m), cost = khoảng cách/gate; vị trí sàn của cụm lấy từ obs không bị cắt. **Đã xác nhận 2026-10-26** | WILDTRACK: sai số sàn median của box bị cắt 0.61–0.77 m, so với 0.09–0.23 m khi không bị cắt; oracle F1 0.982 → 0.985, count MAE 1.09 → 0.92 |
 | 2026-10-25 | Giữ pose imgsz 960 (không dùng 1280) | WILDTRACK 1280: det recall +5 điểm nhưng pair F1 0.786 → 0.741, count MAE 3.35 → 7.04 |
 | 2026-10-25 | Calibration báo cáo sai số **leave-one-out** (`loo_error_rms_m`) | RMS in-sample lạc quan khi chỉ có 6–8 điểm |
 | 2026-10-25 | Lịch sử behavior (drop hông, keypoint trước) theo `(cam, global_id)` thay vì `(cam, track_id)`; `fall.hold_s` 0.5 → 0.2 | UR Fall: tracker đổi ID lúc ngã làm mất drop; hold 0.2 tune trên val (số lẻ), test F1 0.667 → 0.743 nhưng FA/giờ 57.8 → 134.8 |

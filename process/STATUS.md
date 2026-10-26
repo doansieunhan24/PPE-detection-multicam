@@ -20,8 +20,8 @@
 - (không có)
 
 ## Blocker / chờ người dùng
+- (2026-10-26) Người dùng đã xác nhận 4 thay đổi spec: dt_weighting, p calibration + theta_neg −0.5, foot_point = bbox_bottom, d_max_truncated_m = 1.2 (CLAUDE.md §7.1, §7.3, §7.5, §15)
 - **P0:** trong WSL chạy `sudo usermod -aG docker $USER` rồi `wsl --shutdown` (Docker, nvidia runtime, GPU trong WSL đều đã sẵn)
-- **Xác nhận** dt_weighting (§7.5), p calibration + theta_neg −0.5, foot_point = bbox_bottom (§7.1), d_max_truncated_m = 1.2
 - Quay C2 theo `docs/c2_shooting_script.md`; trả lời câu hỏi mở §16
 - License WILDTRACK: TODO(verify)
 - Fuse fall: giữ vmean (§7.7, tốt nhất trên MCFD); có thêm cờ loại cam nhìn từ trên xuống không?
