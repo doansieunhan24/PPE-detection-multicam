@@ -1,5 +1,7 @@
 # SGIE: PPE detector on person crops (CLAUDE.md D7). Classes: configs/deepstream/labels_ppe.txt
-# Parser from marcoslucianops/DeepStream-Yolo — TODO(verify) function/lib names for the version.
+# Parser from marcoslucianops/DeepStream-Yolo (checked 2026-10-26 against config_infer_primary_yolo11.txt).
+# Export: python -m tools.export_ds_onnx det -w models/ds/sh17chv_crop_y11s.pt -s 320 --dynamic --simplify
+# nvinfer crops the tracker bbox as is; the offline backend pads the crop by crop_pad (0.1).
 [property]
 gpu-id=0
 gie-unique-id=2
@@ -8,8 +10,8 @@ operate-on-gie-id=1
 operate-on-class-ids=0
 net-scale-factor=0.0039215697906911373
 model-color-format=0
-onnx-file=../../models/sh17chv_crop_y11s.onnx
-model-engine-file=../../models/sh17chv_crop_y11s.onnx_b16_gpu0_fp16.engine
+onnx-file=../../models/ds/sh17chv_crop_y11s.onnx
+model-engine-file=../../models/ds/sh17chv_crop_y11s.onnx_b16_gpu0_fp16.engine
 labelfile-path=labels_ppe.txt
 batch-size=16
 network-mode=2
@@ -24,6 +26,7 @@ input-object-min-width=24
 input-object-min-height=48
 parse-bbox-func-name=NvDsInferParseYolo
 custom-lib-path=/workspace/third_party/DeepStream-Yolo/nvdsinfer_custom_impl_Yolo/libnvdsinfer_custom_impl_Yolo.so
+engine-create-func-name=NvDsInferYoloCudaEngineGet
 
 [class-attrs-all]
 nms-iou-threshold=0.5

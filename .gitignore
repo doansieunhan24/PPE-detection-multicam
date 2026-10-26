@@ -38,3 +38,6 @@ runs/
 Thumbs.db
 .vscode/
 .idea/
+
+# Cloned DeepStream parsers (built inside the DS container), docker/README.md
+third_party/

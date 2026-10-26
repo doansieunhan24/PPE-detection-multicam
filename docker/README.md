@@ -27,22 +27,36 @@ docker run --rm --gpus all --network host     -v ds71_sample_models:/opt/nvidia/
   deepstream-app --version-all
   ```
 
-## Parser YOLO (trong container)
-Đã đối chiếu với repo `marcoslucianops/DeepStream-Yolo-Pose` (master, 2026-10-25). Repo hỗ trợ DS 8.0 / 7.1 / 7.0 / …, có sẵn `config_infer_primary_yolo11_pose.txt`.
+## Model dự án trong DeepStream (đã chạy 2026-10-26)
+Parser lấy từ `marcoslucianops/DeepStream-Yolo-Pose` (commit `2fa5bd8`) và `DeepStream-Yolo` (commit `2894bab`), clone vào `third_party/` (gitignored), build **trong container**:
 ```bash
 mkdir -p third_party && cd third_party
-git clone https://github.com/marcoslucianops/DeepStream-Yolo-Pose
-CUDA_VER=12.6 make -C DeepStream-Yolo-Pose/nvdsinfer_custom_impl_Yolo_pose   # 12.6 = DS 7.1 x86
-git clone https://github.com/marcoslucianops/DeepStream-Yolo                  # SGIE PPE detector
-CUDA_VER=12.6 make -C DeepStream-Yolo/nvdsinfer_custom_impl_Yolo
+git clone --depth 1 https://github.com/marcoslucianops/DeepStream-Yolo-Pose
+git clone --depth 1 https://github.com/marcoslucianops/DeepStream-Yolo
+# trong ppe-ds:7.1, tại /workspace:
+CUDA_VER=12.6 make -C third_party/DeepStream-Yolo-Pose/nvdsinfer_custom_impl_Yolo_pose   # 12.6 = DS 7.1 x86
+CUDA_VER=12.6 make -C third_party/DeepStream-Yolo/nvdsinfer_custom_impl_Yolo
 ```
-Export ONNX bằng script của **từng repo**, vì layout output khác với export mặc định của Ultralytics:
-- Pose: chép `DeepStream-Yolo-Pose/utils/export_yolo11_pose.py` vào thư mục `ultralytics/`, rồi chạy `python3 export_yolo11_pose.py -w yolo11m-pose.pt -s 960 --dynamic`
-- PPE: script export YOLO11 của DeepStream-Yolo (TODO(verify) tên script), dùng `-s 320`.
+Export ONNX (ở venv Windows/Linux có ultralytics) bằng script của từng repo. Layout output khác bản export của Ultralytics nên để riêng ở `models/ds/`. `tools/export_ds_onnx.py` ép exporter TorchScript (`dynamo=False`) vì torch ≥ 2.9 mặc định dynamo; cần `pip install onnxscript onnxslim`:
+```bash
+mkdir -p models/ds && cp models/yolo11m-pose.pt models/sh17chv_crop_y11s.pt models/ds/
+python -m tools.export_ds_onnx pose -w models/ds/yolo11m-pose.pt -s 960 --dynamic --simplify      # output [b,18900,56]
+python -m tools.export_ds_onnx det  -w models/ds/sh17chv_crop_y11s.pt -s 320 --dynamic --simplify  # output [b,2100,6]
+```
+Engine TensorRT FP16 build lần đầu: PGIE khoảng 6 phút, SGIE khoảng 4 phút. Engine SGIE do hàm của DeepStream-Yolo ghi ra thư mục làm việc với tên `model_b16_gpu0_fp16.engine`; chuyển nó thành `models/ds/sh17chv_crop_y11s.onnx_b16_gpu0_fp16.engine` để các lần sau dùng lại. PGIE build một engine batch 4, `ds_app` đặt `batch-size` bằng số cam.
 
-Keypoint nằm trong `obj_meta.mask_params` ở **toạ độ đầu vào mạng (letterbox)**. Probe đổi về pixel camera bằng `src/pipeline/meta_export.letterbox_keypoints` (cùng công thức với `deepstream.py` của repo).
+```bash
+python3 -m src.pipeline.ds_app --cameras data/rehearsal/wt3/jsonl/cameras.yaml --out data/ds/wt3/jsonl_detector
+python3 -m eval.bench_fps_ds --videos data/rehearsal/wt3/raw/cam{1,2,3}.mp4 --streams 4 1 2 3 --duration-s 60 --out eval/reports/bench_fps_ds_wt3
+```
 
-## Chạy
-1. `bash tools/rtsp_sim.sh data/raw/s01/` (mediamtx + ffmpeg loop), rồi `docker compose -f docker/docker-compose.yml up`.
-2. Đối chiếu JSONL của DeepStream với JSONL offline trên cùng video (P1 "Done khi": 2 backend so khớp được).
-3. Benchmark: `eval/bench_fps.py` mới đo offline backend. Offline đạt khoảng 16 fps tổng ở 1080p (RTX 4060 Laptop, `eval/reports/bench_fps_wildtrack1080`); số liệu DeepStream cần đo riêng.
+Ghi chú khi nối vào DeepStream:
+- Keypoint nằm trong `obj_meta.mask_params` ở **toạ độ đầu vào mạng (letterbox)**. `meta_export.letterbox_keypoints` đổi về pixel camera; keypoint vẫn còn sau NvDCF.
+- PPE của SGIE là object con có `parent` là người. pyds tạo wrapper mới ở mỗi lần `cast` hay `.parent`, nên phải ghép bằng `object_id`, không dùng `id()`.
+- **Crop SGIE phải nới `ppe.crop_pad`** như lúc train (probe ở sink pad của SGIE nới `rect_params`). Không nới thì mức khớp PPE với offline thấp hơn (shoes 0.818, head 0.901 so với 0.925 / 0.944 khi nới).
+- **Bbox người xuất ra là bbox detector** (`--person-bbox detector`, fallback tracker khi frame đó không detect). Dùng bbox NvDCF thì pair F1 association trên WILDTRACK giảm 0.822 → 0.738.
+- NMS của parser pose cố định IoU 0.45 (README repo, `cluster-mode=4`); offline dùng 0.7.
+- `ts_ms`: RTSP lấy đồng hồ hệ thống, file lấy `--start-ms` + pts của buffer (khớp offline 100 % frame trên wt3).
+
+## So khớp với offline
+`python -m eval.compare_backends --ref <jsonl offline> --test <jsonl DS>`: ghép người theo IoU từng frame, so bbox, keypoint, PPE và track. Kết quả trên wt3 ghi ở `docs/experiments.md`.

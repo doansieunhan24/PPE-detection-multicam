@@ -1,7 +1,8 @@
 # PGIE: YOLO-pose (person bbox + 17 keypoints), CLAUDE.md D6 / §8.
 # Parser + engine from marcoslucianops/DeepStream-Yolo-Pose. Checked 2026-10-25 against the repo's
 # config_infer_primary_yolo11_pose.txt (master): same parser/function names and clustering.
-# Export: utils/export_yolo11_pose.py -w yolo11m-pose.pt -s 960 --dynamic (copy into ultralytics/).
+# Export: python -m tools.export_ds_onnx pose -w models/ds/yolo11m-pose.pt -s 960 --dynamic --simplify
+# NMS is inside the parser (IoU fixed 0.45, repo README); offline backend uses iou 0.7.
 # Build the lib: CUDA_VER=12.6 (DS 7.1 x86) / 12.8 (DS 8.0) make -C nvdsinfer_custom_impl_Yolo_pose
 # Keypoints: obj_meta.mask_params, network-input (letterbox) space → src/pipeline/meta_export.py
 [property]
@@ -9,9 +10,11 @@ gpu-id=0
 gie-unique-id=1
 net-scale-factor=0.0039215697906911373
 model-color-format=0
-onnx-file=../../models/yolo11m-pose.onnx
-model-engine-file=../../models/yolo11m-pose.onnx_b3_gpu0_fp16.engine
-batch-size=3
+onnx-file=../../models/ds/yolo11m-pose.onnx
+model-engine-file=../../models/ds/yolo11m-pose.onnx_b4_gpu0_fp16.engine
+labelfile-path=../../models/ds/labels_pose.txt
+# engine built once for up to 4 streams; ds_app sets batch-size = number of cameras
+batch-size=4
 network-mode=2
 process-mode=1
 num-detected-classes=1
@@ -20,6 +23,9 @@ network-type=3
 cluster-mode=4
 maintain-aspect-ratio=1
 symmetric-padding=1
+scaling-filter=1
+scaling-compute-hw=0
+force-implicit-batch-dim=0
 parse-bbox-instance-mask-func-name=NvDsInferParseYoloPose
 custom-lib-path=/workspace/third_party/DeepStream-Yolo-Pose/nvdsinfer_custom_impl_Yolo_pose/libnvdsinfer_custom_impl_Yolo_pose.so
 output-instance-mask=1
