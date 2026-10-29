@@ -25,7 +25,6 @@
 ## Blocker / chờ người dùng
 - Quay C2 theo `docs/c2_shooting_script.md`; trả lời câu hỏi mở §16
 - License WILDTRACK: TODO(verify)
-- Fuse fall: có thêm cờ loại cam nhìn từ trên xuống không?
 - Telegram thật: cần `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` trong `.env`
 
 ## Ưu tiên tiếp theo

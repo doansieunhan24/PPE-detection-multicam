@@ -527,6 +527,7 @@ pytest -q && ruff check src eval tools
 | 2026-10-29 | CROWD gán nhãn theo zone (`gt_id` trống), ghép theo loại + thời gian | Tụ tập không thuộc về một người |
 | 2026-10-29 | `PPEEngine.step = decide(observe())`; eval cache phần observe (`run(obs_cache=)`) | Observe không phụ thuộc policy và mục `evidence/alert/baselines`; test chứng minh cùng output; toàn chuỗi C2 chạy thử 100 s |
 | 2026-10-29 | Snapshot alert live lấy từ clip smart record + overlay vẽ từ metadata (`src/alerts/snapshot.py`) | Clip smart record không có OSD; offset chính xác khoảng 1 GOP |
+| 2026-10-29 | **Không thêm cờ loại cam nhìn từ trên xuống** cho fuse fall; giữ `fall.fusion: vmean` (người dùng xác nhận) | Hệ thống và C2 không có cam nhìn từ trên xuống (cam đặt thấp, nhìn ngang/chéo). Vấn đề chỉ gặp ở UR Fall cam1 (trần); ghi vào Limitations |
 | — | Số cam / loại cam / có Jetson Orin không: `TODO` | |
 
 ---
@@ -548,6 +549,7 @@ pytest -q && ruff check src eval tools
 - Association phụ thuộc recall detection: trong đám đông dày (WILDTRACK) YOLO-pose chỉ bắt được khoảng 44 % box GT, nên đếm người bị thiếu.
 - Không phân biệt được giày bảo hộ với giày thường ở khoảng cách xa (giới hạn của dataset SH17).
 - Dữ liệu té ngã là té giả, có thể khác té thật.
+- Fuse té ngã theo `v` giả định các cam nhìn ngang/chéo. Cam nhìn từ trên xuống thấy rõ nhưng không phân biệt được đứng với nằm, làm điểm fuse giảm (UR Fall cam1); hệ thống không hỗ trợ cam kiểu này.
 - Người bị cắt chân ở mép dưới ảnh (đứng sát cam đặt thấp) có điểm sàn sai khoảng 0.6–0.8 m. Chỉ giảm được tác động (gate riêng, ưu tiên cam khác), không sửa được vị trí.
 - Offline backend (Ultralytics) không đạt real-time cho đa luồng (khoảng 16 fps tổng ở 1080p trên RTX 4060 Laptop). DeepStream đạt khoảng 80 fps tổng: real-time 25 fps tối đa 3 cam 1080p trên GPU laptop này (4 cam còn 19.8 fps/cam).
 - Clip bằng chứng live (smart record) là stream gốc của camera, không có OSD (snapshot có overlay vẽ lại từ metadata, lệch tối đa khoảng 1 GOP); chỉ hoạt động với nguồn RTSP.
