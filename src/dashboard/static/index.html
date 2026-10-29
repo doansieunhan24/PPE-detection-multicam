@@ -25,6 +25,8 @@
   .L1 { color:var(--muted); } .L2 { color:#d98a1e; } .L3 { color:var(--bad); font-weight:600; }
   button { font:inherit; padding:2px 8px; border:1px solid var(--line); background:transparent; color:var(--fg); border-radius:4px; cursor:pointer; }
   .acked { opacity:.45; }
+  .video { grid-column: 1 / -1; padding:0; overflow:hidden; }
+  .video iframe { width:100%; aspect-ratio:16/9; border:0; display:block; }
 </style>
 </head>
 <body>
@@ -38,6 +40,7 @@
   <span id="updated" style="margin-left:auto;color:var(--muted)"></span>
 </header>
 <main>
+  <section class="card video" id="video" hidden></section>
   <section class="card"><svg id="map" viewBox="-1 -1 12 10"></svg></section>
   <section class="card">
     <table><thead><tr><th>Mức</th><th>Loại</th><th>Người</th><th>Lúc</th><th></th></tr></thead>
@@ -97,6 +100,12 @@ async function listAlerts() {
     return tr;
   }));
 }
+fetch("/api/config").then(r => r.json()).then(c => {
+  if (!c.video_url) return;
+  const box = document.getElementById("video"), f = document.createElement("iframe");
+  f.src = c.video_url; f.allow = "autoplay"; f.title = "OSD";
+  box.append(f); box.hidden = false;
+}).catch(console.error);
 function tick() { draw().catch(console.error); listAlerts().catch(console.error); }
 tick(); setInterval(tick, 1000);
 </script>

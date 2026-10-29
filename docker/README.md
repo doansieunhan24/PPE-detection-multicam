@@ -60,3 +60,29 @@ Ghi chú khi nối vào DeepStream:
 
 ## So khớp với offline
 `python -m eval.compare_backends --ref <jsonl offline> --test <jsonl DS>`: ghép người theo IoU từng frame, so bbox, keypoint, PPE và track. Kết quả trên wt3 ghi ở `docs/experiments.md`.
+
+## Demo live (P7, chạy 2026-10-27)
+```
+mediamtx (rtsp_sim) ──RTSP──▶ ds_app ──ZMQ PUB :5555──▶ analytics_live (Windows venv) ──▶ SQLite / Telegram / alerts.jsonl
+      ▲  path "osd"            │  ▲                                │
+      └──── OSD tiled H.264 ───┘  └──── ZMQ PUSH :5556 (alert) ─────┘  → smart record + chữ alert trên OSD
+dashboard (FastAPI) ◀── states_latest.json + alerts.db + data/evidence/ ; video: WebRTC mediamtx :8889/osd
+```
+```bash
+# 1) WSL: camera giả lập (video H.264, GOP 1 s; wt3 gốc là MPEG-4 Part 2, smart record cần H.264)
+bash tools/rtsp_sim.sh data/demo/wt3/raw/
+# 2) WSL: DeepStream
+docker run --rm --gpus all --network host -v "$PWD":/workspace -w /workspace --entrypoint bash ppe-ds:7.1 \
+  -c "python3 -m src.pipeline.ds_app --cameras data/demo/wt3/cameras.yaml --out data/demo/run1/jsonl \
+      --zmq-pub tcp://*:5555 --sr-bind tcp://*:5556 --osd rtsp://localhost:8554/osd"
+# 3) Windows (venv): analytics + dashboard (localhost của Windows tới được cổng trong WSL)
+python -m src.analytics_live --zmq tcp://localhost:5555 --sr tcp://localhost:5556 --session data/demo/wt3 --out data/results/live
+python -m src.dashboard.app --results data/results/live --session data/demo/wt3 --video-url http://localhost:8889/osd --port 8765
+# Không có DeepStream: phát lại JSONL theo thời gian thực
+python -m src.analytics_live --replay data/rehearsal/wt3/jsonl --session data/demo/wt3 --out data/results/live
+```
+- `data/demo/wt3/` (gitignored): `cameras.yaml` (RTSP, offset 0, calibration WILDTRACK C1/C4/C6), `zones.yaml` demo (Z1 bắt buộc PPE, F1 vùng cấm 2×2 m, R1 rủi ro crowd_max 8) — không phải layout thật.
+- **Nhiều nguồn RTSP cùng kết nối làm crash (SIGSEGV) trong libproxy của GIO** (`px_proxy_factory_get_proxies`, gdb). `ds_app` đặt `GIO_USE_PROXY_RESOLVER=dummy` trước khi import gi. Bản trước (commit `c1eac87`) cũng crash với RTSP, chỉ chạy được với file.
+- Encoder `nvv4l2h264enc` trên dGPU không có `insert-sps-pps`: dùng `h264parse config-interval=-1`.
+- Smart record (`src/pipeline/smart_record.py`): chỉ với nguồn RTSP; `start-sr` cần con trỏ session id hợp lệ (truyền PyCapsule), `sr-done` đọc tên file bằng ctypes. Clip là stream gốc của camera (không có OSD), đổi tên thành `data/evidence/<alert_id>_<cam>.mp4`. Mỗi nguồn ghi 1 clip một lúc, alert đến trong lúc đang ghi dùng chung clip.
+- Ghép frame giữa các cam khi live: `src/common/time_sync.LiveSyncer` (cùng kết quả với `sync_groups` offline khi đủ frame, có test); tham số ở `configs/alerts.yaml` → `live`.

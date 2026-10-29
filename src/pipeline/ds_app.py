@@ -1,9 +1,14 @@
 """DeepStream perception app (CLAUDE.md §4, §8). Runs in the ppe-ds:7.1 image (docker/README.md).
 
-nvurisrcbin ×N → nvstreammux → PGIE YOLO-pose → nvtracker → SGIE PPE (crops) → probe → JSONL
-The probe copies metadata into PerceptionFrame and hands it to JsonlExporter (no heavy work).
+nvurisrcbin ×N → nvstreammux → PGIE YOLO-pose → nvtracker → SGIE PPE (crops) → probe → tee
+    tee → fakesink                       (metadata: JSONL and/or ZMQ PUB)
+    tee → tiler → nvdsosd → H.264 → RTSP (mediamtx) or .mp4      (--osd, optional)
+The probe copies metadata into PerceptionFrame and hands it to the exporters (no heavy work).
 
     python3 -m src.pipeline.ds_app --cameras configs/cameras.yaml --out data/jsonl/live/
+    # live demo (docker/README.md): frames to analytics_live, alerts back → smart record + OSD
+    python3 -m src.pipeline.ds_app --cameras configs/cameras.yaml --out data/jsonl/live/ \\
+        --zmq-pub tcp://*:5555 --sr-bind tcp://*:5556 --osd rtsp://localhost:8554/osd
 
 - keypoints: DeepStream-Yolo-Pose stores them in mask_params (letterboxed network space)
   → letterbox_keypoints()
@@ -16,6 +21,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import os
+import signal
 import time
 from pathlib import Path
 
@@ -23,11 +31,67 @@ from src.common.config import DEFAULT_CONFIG_DIR, load_yaml
 from src.common.logging import get_logger, setup_logging
 from src.common.schemas import PerceptionFrame, PersonDet, PPEDet
 from src.perception_offline.convert import pad_clip_bbox
-from src.pipeline.meta_export import JsonlExporter, letterbox_keypoints
+from src.pipeline.meta_export import Fanout, JsonlExporter, ZmqPublisher, letterbox_keypoints
 
 log = get_logger(__name__)
 PGIE_ID, SGIE_ID = 1, 2
 PPE_LABELS = ["helmet", "vest", "shoes", "head", "foot"]  # configs/deepstream/labels_ppe.txt
+# OSD colours (r, g, b): PPE items green, the matching "missing" classes red
+OSD_COLORS = {
+    "person": (1.0, 1.0, 1.0),
+    "helmet": (0.2, 0.9, 0.3),
+    "vest": (0.2, 0.9, 0.3),
+    "shoes": (0.2, 0.9, 0.3),
+    "head": (0.95, 0.25, 0.25),
+    "foot": (0.95, 0.25, 0.25),
+}
+LEVEL_COLORS = {1: (0.8, 0.8, 0.8), 2: (1.0, 0.6, 0.1), 3: (1.0, 0.2, 0.2)}
+
+
+class AlertOverlay:
+    """Recent alerts per camera, drawn on the OSD for `hold_s` (fed by the trigger channel)."""
+
+    def __init__(self, hold_s: float) -> None:
+        self.hold_s = hold_s
+        self._items: dict[str, list[tuple[float, int, str]]] = {}
+
+    def add(self, alert: dict, now: float | None = None) -> None:
+        now = time.monotonic() if now is None else now
+        gid = alert.get("global_id")
+        text = f"L{alert.get('level', '?')} {alert.get('type', '?')}" + (
+            f" #{gid}" if gid is not None else ""
+        )
+        for cam in alert.get("cams", []):
+            self._items.setdefault(cam, []).append(
+                (now + self.hold_s, int(alert.get("level", 1)), text)
+            )
+
+    def active(self, cam: str, now: float | None = None) -> list[tuple[int, str]]:
+        now = time.monotonic() if now is None else now
+        items = [it for it in self._items.get(cam, []) if it[0] > now]
+        self._items[cam] = items
+        return [(lvl, text) for _, lvl, text in items[-4:]]
+
+
+def _set_color(rp, rgb, width: int) -> None:
+    rp.border_width = width
+    rp.border_color.set(*rgb, 1.0)
+    rp.has_bg_color = 0
+
+
+def _draw_overlay(pyds, batch, fm, lines: list[tuple[int, str]]) -> None:
+    dm = pyds.nvds_acquire_display_meta_from_pool(batch)
+    dm.num_labels = len(lines)
+    for i, (lvl, text) in enumerate(lines):
+        tp = dm.text_params[i]
+        tp.display_text = text
+        tp.x_offset, tp.y_offset = 20, 20 + 60 * i
+        tp.font_params.font_name = "Sans"
+        tp.font_params.font_size = 28
+        tp.font_params.font_color.set(1.0, 1.0, 1.0, 1.0)
+        tp.set_bg_clr = 1
+        tp.text_bg_clr.set(*LEVEL_COLORS.get(lvl, LEVEL_COLORS[1]), 0.85)
+    pyds.nvds_add_display_meta_to_frame(fm, dm)
 
 
 def _keypoints(obj_meta, mux_w: int, mux_h: int, sx: float, sy: float) -> list:
@@ -111,6 +175,21 @@ def build_crop_pad_probe(pyds, crop_pad: float, mux_w: int, mux_h: int):
     return probe
 
 
+def _style_object(o, r) -> None:
+    """OSD look of one object; persons get their unpadded box back (r: detector/tracker box)."""
+    if o.unique_component_id == PGIE_ID:
+        rp = o.rect_params
+        rp.left, rp.top, rp.width, rp.height = r.left, r.top, r.width, r.height
+        _set_color(rp, OSD_COLORS["person"], 2)
+        o.text_params.display_text = (
+            f"id {o.object_id}" if o.object_id != 0xFFFFFFFFFFFFFFFF else ""
+        )
+    elif o.unique_component_id == SGIE_ID:
+        cls = PPE_LABELS[o.class_id] if o.class_id < len(PPE_LABELS) else ""
+        _set_color(o.rect_params, OSD_COLORS.get(cls, (1.0, 1.0, 0.0)), 3)
+        o.text_params.display_text = cls
+
+
 def build_probe(
     pyds,
     cams: list[dict],
@@ -121,7 +200,11 @@ def build_probe(
     pcfg: dict,
     start_ms: int = 0,
     person_bbox: str = "detector",
+    osd: bool = False,
+    overlay: AlertOverlay | None = None,
 ):
+    """osd=True: also restore the person rect (padded for the SGIE crop) and set OSD colours /
+    labels for nvdsosd downstream; overlay: alert texts per camera."""
     from gi.repository import Gst
 
     min_w, min_h = pcfg["ppe"]["min_crop_w_px"], pcfg["ppe"]["min_crop_h_px"]
@@ -151,6 +234,8 @@ def build_probe(
                     if person_bbox == "detector" and d.width > 0 and d.height > 0:
                         r = d
                 box = (r.left * sx, r.top * sy, (r.left + r.width) * sx, (r.top + r.height) * sy)
+                if osd:
+                    _style_object(o, r)
                 if o.unique_component_id == PGIE_ID and o.object_id != 0xFFFFFFFFFFFFFFFF:
                     persons[int(o.object_id)] = PersonDet(
                         track_id=int(o.object_id),
@@ -176,6 +261,8 @@ def build_probe(
             else:
                 ts_ms = start_ms + int(fm.buf_pts // 1_000_000)
             meter.tick(cam["cam_id"])
+            if overlay is not None and (lines := overlay.active(cam["cam_id"])):
+                _draw_overlay(pyds, batch, fm, lines)
             exporter.put(
                 PerceptionFrame(
                     cam_id=cam["cam_id"],
@@ -192,12 +279,70 @@ def build_probe(
     return probe
 
 
+def _osd_branch(make, osd: str, n_cams: int, tiler_wh: tuple[int, int], bitrate: int, gop: int):
+    """tee → queue (leaky: never slows inference) → tiler → nvdsosd → H.264 → RTSP or mp4.
+    Returns the queue to link from the tee."""
+    from gi.repository import Gst
+
+    cols = math.ceil(math.sqrt(n_cams))
+    rows = math.ceil(n_cams / cols)
+    q = make("queue", "osd_queue", leaky=2, max_size_buffers=4)
+    tiler = make(
+        "nvmultistreamtiler",
+        "tiler",
+        rows=rows,
+        columns=cols,
+        width=tiler_wh[0],
+        height=tiler_wh[1],
+    )
+    conv1 = make("nvvideoconvert", "osd_conv1")
+    osd_el = make("nvdsosd", "osd", process_mode=1)  # 1 = GPU
+    conv2 = make("nvvideoconvert", "osd_conv2")
+    caps = make(
+        "capsfilter",
+        "osd_caps",
+        caps=Gst.Caps.from_string("video/x-raw(memory:NVMM),format=NV12"),
+    )
+    enc = make(
+        "nvv4l2h264enc",
+        "osd_enc",
+        bitrate=bitrate,
+        iframeinterval=gop,
+        idrinterval=gop,
+    )
+    # SPS/PPS before every IDR so viewers can join mid-stream (dGPU encoder has no
+    # insert-sps-pps property, gst-inspect DS 7.1)
+    parse = make("h264parse", "osd_parse", config_interval=-1)
+    chain = [q, tiler, conv1, osd_el, conv2, caps, enc, parse]
+    if osd.startswith("rtsp://"):
+        out = make("rtspclientsink", "osd_sink", location=osd)
+        Gst.util_set_object_arg(out, "protocols", "tcp")  # UDP fails in WSL2 (docker/README.md)
+        chain.append(out)
+    else:
+        Path(osd).parent.mkdir(parents=True, exist_ok=True)
+        chain += [make("mp4mux", "osd_mux"), make("filesink", "osd_sink", location=osd, sync=0)]
+    for a, b in zip(chain, chain[1:], strict=False):
+        if not a.link(b):
+            raise RuntimeError(f"cannot link {a.get_name()} -> {b.get_name()}")
+    return q
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--cameras", default="configs/cameras.yaml")
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--out", help="JSONL output dir (<cam_id>.jsonl)")
+    ap.add_argument("--zmq-pub", help="also publish frames on a ZMQ PUB endpoint (tcp://*:5555)")
+    ap.add_argument(
+        "--sr-bind",
+        help="ZMQ PULL endpoint for alerts from analytics_live (smart record + OSD overlay), "
+        "e.g. tcp://*:5556",
+    )
+    ap.add_argument("--osd", help="tiled OSD output: rtsp://host:8554/osd (mediamtx) or out.mp4")
+    ap.add_argument("--osd-size", default="1920x1080")
+    ap.add_argument("--osd-bitrate", type=int, default=4_000_000)
+    ap.add_argument("--alerts-config", default=str(DEFAULT_CONFIG_DIR / "alerts.yaml"))
     ap.add_argument("--mux", default="1920x1080")
     ap.add_argument("--start-ms", type=int, default=0, help="session start epoch ms (file sources)")
     ap.add_argument("--pgie", default="configs/deepstream/pgie_yolo_pose.txt")
@@ -223,8 +368,13 @@ def main(argv: list[str] | None = None) -> None:
         default="/opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/config_tracker_NvDCF_perf.yml",
     )
     args = ap.parse_args(argv)
+    if not args.out and not args.zmq_pub:
+        ap.error("need --out and/or --zmq-pub")
     setup_logging()
 
+    # Several RTSP sources connecting at once crash in GIO's libproxy module
+    # (px_proxy_factory_get_proxies, gdb 2026-10-27, DS 7.1 image); no proxy is used here
+    os.environ.setdefault("GIO_USE_PROXY_RESOLVER", "dummy")
     import gi
 
     gi.require_version("Gst", "1.0")
@@ -238,6 +388,13 @@ def main(argv: list[str] | None = None) -> None:
             c["uri"] = Path(c["uri"]).resolve().as_uri()
     live = all(c["uri"].startswith("rtsp://") for c in cams)
     mux_w, mux_h = (int(v) for v in args.mux.split("x"))
+    alerts_cfg = load_yaml(args.alerts_config)
+    sr_cfg = alerts_cfg.get("smart_record", {})
+    use_sr = bool(args.sr_bind and sr_cfg.get("enabled", False))
+    if use_sr and not live:
+        log.warning("smart record needs RTSP sources: disabled (evidence: tools/make_evidence.py)")
+        use_sr = False
+    evidence_dir = Path(sr_cfg.get("out_dir", "data/evidence"))
     pipe = Gst.Pipeline()
 
     def make(factory, name, **props):
@@ -259,6 +416,7 @@ def main(argv: list[str] | None = None) -> None:
         live_source=int(live),
         batched_push_timeout=int(1e6 / fps),
     )
+    srcs = {}
     for i, c in enumerate(cams):
         src = make("nvurisrcbin", f"src{i}", uri=c["uri"])
         if args.duration_s > 0 and c["uri"].startswith("file://"):
@@ -266,6 +424,13 @@ def main(argv: list[str] | None = None) -> None:
         if c["uri"].startswith("rtsp://"):
             # 4 = rtp-tcp: RTP over UDP fails in WSL2 (IPv6 udpsink), docker/README.md
             src.set_property("select-rtp-protocol", 4)
+        if use_sr:
+            from src.pipeline.smart_record import SmartRecorder
+
+            SmartRecorder.configure(
+                src, c["cam_id"], i, evidence_dir / "_sr", sr_cfg.get("cache_s", 15)
+            )
+        srcs[c["cam_id"]] = src
         sinkpad = mux.request_pad_simple(f"sink_{i}")
         src.connect("pad-added", lambda _s, pad, sp=sinkpad: pad.link(sp))
     pgie = make("nvinfer", "pgie", config_file_path=args.pgie, batch_size=len(cams))
@@ -277,18 +442,62 @@ def main(argv: list[str] | None = None) -> None:
     )
     sgie = make("nvinfer", "sgie", config_file_path=args.sgie)
     sink = make("fakesink", "sink", sync=0)
-    for a, b in ((mux, pgie), (pgie, tracker), (tracker, sgie), (sgie, sink)):
+    for a, b in ((mux, pgie), (pgie, tracker), (tracker, sgie)):
         a.link(b)
+    if args.osd:
+        tee = make("tee", "tee")
+        q_meta = make("queue", "meta_queue")
+        sgie.link(tee)
+        tee.link(q_meta)
+        q_meta.link(sink)
+        osd_wh = tuple(int(v) for v in args.osd_size.split("x"))
+        gop = max(2, int(2 * fps))  # key frame every ~2 s
+        tee.link(_osd_branch(make, args.osd, len(cams), osd_wh, args.osd_bitrate, gop))
+    else:
+        sgie.link(sink)
 
     pcfg = load_yaml(args.perception)
-    exporter = JsonlExporter(args.out)
+    sinks = []
+    if args.out:
+        sinks.append(JsonlExporter(args.out))
+    if args.zmq_pub:
+        sinks.append(ZmqPublisher(args.zmq_pub))
+    exporter = Fanout(*sinks)
     loop = GLib.MainLoop()
+    eos_sent = []
+
+    def stop(*_a) -> bool:
+        # EOS first so mp4mux (OSD file) writes its index; quit anyway if EOS does not arrive
+        if not eos_sent:
+            eos_sent.append(True)
+            log.info("stopping: sending EOS")
+            pipe.send_event(Gst.Event.new_eos())
+            GLib.timeout_add(5000, lambda: (loop.quit(), False)[1])
+        return False
 
     def start_timer() -> None:
         # --duration-s counts from the first frame, not from start-up (engine build can take
         # minutes); called from the streaming thread, timeout_add is thread-safe
         if args.duration_s > 0:
-            GLib.timeout_add(int(args.duration_s * 1000), lambda: (loop.quit(), False)[1])
+            GLib.timeout_add(int(args.duration_s * 1000), stop)
+
+    overlay = AlertOverlay(float(alerts_cfg.get("live", {}).get("overlay_s", 5.0)))
+    trigger = None
+    if args.sr_bind:
+        from src.pipeline.smart_record import SmartRecorder, TriggerServer
+
+        recorder = None
+        if use_sr:
+            recorder = SmartRecorder(
+                srcs, evidence_dir, sr_cfg.get("pre_s", 5), sr_cfg.get("post_s", 10)
+            )
+
+        def on_alert(a: dict) -> None:
+            overlay.add(a)
+            if recorder is not None and a.get("record", True):
+                recorder.trigger(a["alert_id"], [c for c in a.get("cams", []) if c in srcs])
+
+        trigger = TriggerServer(args.sr_bind, on_alert)
 
     meter = FpsCounter([c["cam_id"] for c in cams], warmup=args.warmup_frames, on_first=start_timer)
     sgie.get_static_pad("sink").add_probe(
@@ -299,7 +508,17 @@ def main(argv: list[str] | None = None) -> None:
     sgie.get_static_pad("src").add_probe(
         Gst.PadProbeType.BUFFER,
         build_probe(
-            pyds, cams, mux_w, mux_h, exporter, meter, pcfg, args.start_ms, args.person_bbox
+            pyds,
+            cams,
+            mux_w,
+            mux_h,
+            exporter,
+            meter,
+            pcfg,
+            args.start_ms,
+            args.person_bbox,
+            osd=bool(args.osd),
+            overlay=overlay if args.sr_bind else None,
         ),
         0,
     )
@@ -307,14 +526,18 @@ def main(argv: list[str] | None = None) -> None:
     bus.add_signal_watch()
     bus.connect("message::eos", lambda *_: loop.quit())
     bus.connect("message::error", lambda _b, m: (log.error("%s", m.parse_error()), loop.quit()))
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, stop)
     t0 = time.monotonic()
     pipe.set_state(Gst.State.PLAYING)
     try:
         loop.run()
     finally:
         pipe.set_state(Gst.State.NULL)
+        if trigger is not None:
+            trigger.close()
         exporter.close()
-        log.info("wrote %d frames -> %s", exporter.written, args.out)
+        log.info("wrote %d frames -> %s", exporter.written, args.out or args.zmq_pub)
         avg = meter.summary()
         log.info("FPS avg %s", {c: round(v, 2) for c, v in avg.items()})
         if args.stats_out:

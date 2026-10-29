@@ -85,3 +85,66 @@ class JsonlExporter:
         self._t.join(timeout)
         if self.dropped:
             log.warning("exporter dropped %d frames (writer too slow)", self.dropped)
+
+
+class ZmqPublisher:
+    """PUB socket: one message per PerceptionFrame, [b"frame", json] (src/analytics_live.py).
+    Same put()/close() contract as JsonlExporter: the probe never blocks."""
+
+    TOPIC = b"frame"
+
+    def __init__(self, endpoint: str, maxsize: int = 1000) -> None:
+        import zmq
+
+        self._sock = zmq.Context.instance().socket(zmq.PUB)
+        self._sock.setsockopt(zmq.SNDHWM, maxsize)
+        self._sock.bind(endpoint)
+        self.q: queue.Queue = queue.Queue(maxsize=maxsize)
+        self.dropped = 0
+        self.written = 0
+        self._t = threading.Thread(target=self._run, name="zmq-pub", daemon=True)
+        self._t.start()
+
+    def put(self, frame: PerceptionFrame) -> None:
+        try:
+            self.q.put_nowait(frame)
+        except queue.Full:
+            self.dropped += 1
+
+    def _run(self) -> None:
+        while True:
+            item = self.q.get()
+            if item is _STOP:
+                break
+            self._sock.send_multipart([self.TOPIC, item.model_dump_json().encode()])
+            self.written += 1
+
+    def close(self, timeout: float = 5.0) -> None:
+        self.q.put(_STOP)
+        self._t.join(timeout)
+        self._sock.close(0)
+        if self.dropped:
+            log.warning("zmq publisher dropped %d frames", self.dropped)
+
+
+class Fanout:
+    """Send each frame to several exporters (JSONL + ZMQ)."""
+
+    def __init__(self, *sinks) -> None:
+        self.sinks = sinks
+
+    def put(self, frame: PerceptionFrame) -> None:
+        for s in self.sinks:
+            s.put(frame)
+
+    def close(self) -> None:
+        for s in self.sinks:
+            s.close()
+
+    @property
+    def written(self) -> int:
+        return self.sinks[0].written
+
+    @property
+    def dropped(self) -> int:
+        return sum(s.dropped for s in self.sinks)

@@ -3,6 +3,7 @@
 #   bash tools/rtsp_sim.sh data/raw/session01/        # cam1.mp4, cam2.mp4, ... -> rtsp://localhost:8554/camX
 # Uses mediamtx + ffmpeg from PATH if both exist; otherwise runs them in Docker
 # (image bluenviron/mediamtx:<ver>-ffmpeg, host network). Ctrl-C stops everything.
+# Path "osd" accepts the tiled OSD stream of ds_app (--osd).
 set -euo pipefail
 DIR="${1:?usage: rtsp_sim.sh <dir with camX.mp4>}"
 HOST="${RTSP_HOST:-localhost}"
@@ -23,6 +24,9 @@ if ! command -v mediamtx >/dev/null || ! command -v ffmpeg >/dev/null; then
       echo "    runOnInitRestart: yes"
       echo "${cam}: rtsp://${HOST}:${PORT}/${cam}" >&2
     done
+    # published by ds_app --osd rtsp://localhost:8554/osd; mediamtx also serves it as
+    # WebRTC http://<host>:8889/osd and HLS http://<host>:8888/osd (dashboard --video-url)
+    echo "  osd:"
   } >"$cfg"
   exec docker run --rm --name rtsp_sim --network host \
     -v "$DIR":/media:ro -v "$cfg":/mediamtx.yml:ro "$MTX_IMAGE"

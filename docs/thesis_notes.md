@@ -55,3 +55,8 @@
 - Cùng model (YOLO11m-pose@960 + PPE M2@320), DeepStream 7.1 (TensorRT FP16, batch theo cam) đạt khoảng 80 fps tổng so với 16 fps của Ultralytics: **3 cam 1080p real-time** trên GPU laptop. Đây là lý do kỹ thuật cho việc chọn DeepStream (C3).
 - Hai backend xuất cùng schema JSONL (D4/D5) và cho kết quả association gần như nhau (pair F1 0.818 so với 0.810 trên WILDTRACK), nên mọi thí nghiệm offline vẫn đại diện cho hệ thống live.
 - Bài học khi nối: crop SGIE phải giống crop lúc train (nới 10%), và bbox xuất ra nên lấy từ detector chứ không phải tracker khi fps thấp. Cả hai đều có số liệu trước/sau.
+
+## Hệ thống live (2026-10-27, P7)
+- Kiến trúc metadata-first (D4) giữ nguyên khi chạy live: DeepStream chỉ xuất PerceptionFrame qua ZMQ, analytics live dùng **cùng lớp `Analytics`** với bản offline. Có test chứng minh replay qua đường live cho cùng alert với runner offline, nên các số eval offline đại diện cho hệ thống live.
+- Vòng phản hồi: alert → ZMQ → `start-sr` của nvurisrcbin → clip bằng chứng [−5 s, +10 s] quanh lúc kích (đo được 14 s ở 2 fps), có cả chữ alert trên OSD. Có thể vẽ sơ đồ này trong chương hệ thống.
+- Số liệu demo trên WILDTRACK (2 fps): độ trễ alert median 0.55 s, chủ yếu do chờ đồng bộ đa cam; cần đo lại ở fps thật của C2.

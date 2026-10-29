@@ -10,6 +10,7 @@ RUN /opt/nvidia/deepstream/deepstream/user_deepstream_python_apps_install.sh --v
 
 # YOLO custom parsers (marcoslucianops/DeepStream-Yolo, DeepStream-Yolo-Pose) are built at
 # runtime against the container's DeepStream headers: see docker/README.md.
-RUN pip3 install --no-cache-dir pyyaml pydantic numpy
+# pyzmq: ds_app --zmq-pub / --sr-bind (live demo, src/analytics_live.py)
+RUN pip3 install --no-cache-dir pyyaml pydantic numpy pyzmq
 
 WORKDIR /workspace

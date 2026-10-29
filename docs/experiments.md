@@ -355,3 +355,22 @@ UR Fall (cấu hình cuối): cam0 test P/R/F1 0.682/1.000/0.811, FA 134.8/giờ
   - Sai số vị trí sàn của DS cao hơn (0.240 so với 0.202 m) dù dùng bbox detector. Chưa rõ nguyên nhân (letterbox vuông 960×960 so với 960×544 của Ultralytics, FP16); cần kiểm tra lại trên C2.
   - GPU đã bão hoà từ 2 stream (khoảng 80 fps tổng). Muốn thêm stream: YOLO11s-pose, INT8, hoặc `interval` > 0 cho PGIE (TODO, chưa đo).
   - wt3 chỉ 2 fps nên tracker chạy ở điều kiện khó; trên C2 (25–30 fps) cần đo lại khác biệt tracker.
+
+## 2026-10-27 — Demo live end-to-end (P7): DS → ZMQ → analytics → smart record / OSD / dashboard
+- **Code:** commit gốc `c1eac87` + thay đổi chưa commit của session s12 (`ds_app --zmq-pub/--sr-bind/--osd`, `src/analytics_live.py`, `src/common/time_sync.py`, `src/pipeline/smart_record.py`). Config: `configs/` + session `data/demo/wt3/` (cameras.yaml RTSP, zones.yaml demo).
+- **Dữ liệu:** wt3 (WILDTRACK C1/C4/C6, 2 fps, 200 s) mã hoá lại H.264 GOP 1 s, phát RTSP bằng `tools/rtsp_sim.sh` (mediamtx Docker, TCP). DS 7.1 trong WSL2, analytics + dashboard trên Windows venv, cùng RTX 4060 Laptop.
+- **Kiểm tra tương đương:** `tests/test_live.py`: `LiveSyncer` cho cùng nhóm frame với `sync_groups`; `run_live` (replay) cho cùng số nhóm và cùng alert (type, global_id, t_raise) với `analytics_runner.run`.
+- **Kết quả lần chạy 180 s** (`data/demo/run1/ds_stats.json`, `data/results/live/alerts.jsonl`, log `data/demo/run1/ds.log`):
+
+| Mục | Giá trị |
+|---|---|
+| FPS / cam (DS, sau 10 frame warmup) | 1.99 / 1.99 / 2.01 (= fps nguồn), 1092 frame, dropped 0 |
+| Alert | 91 (L1 53, L2 38): UNVERIFIABLE 53, PPE_VEST 25, INTRUSION 8, PPE_HELMET 4, CROWD 1 |
+| Độ trễ alert (lúc phát − t_raise, t_raise = đồng hồ hệ thống tại probe DS) | median 554 ms, p95 623 ms, max 794 ms |
+| Smart record | 37 alert L2 có clip; 37/37 file tồn tại; 25 lần ghi, dài median 14.0 s (min 10.0, max 15.0; cấu hình pre 5 + post 10); 0 lần start thất bại |
+| OSD | tiler 2×2 + nvdsosd → H.264 → `rtsp://localhost:8554/osd`, xem được qua HLS/WebRTC của mediamtx (kiểm tra bằng frame chụp) |
+
+- **Nhận xét:**
+  - Độ trễ alert khoảng 0.55 s chủ yếu do đồng bộ ở 2 fps: frame tham chiếu phải chờ frame kế tiếp của cam khác (`sync_tol_ms` 250, chu kỳ 500 ms). Ở 25 fps dự kiến thấp hơn nhiều, cần đo lại trên C2. Con số này chưa gồm `T_alert` (thời gian giữ vi phạm theo thiết kế).
+  - Nhiều alert vì WILDTRACK không ai đội mũ/mặc áo phản quang và global id thay đổi nhiều trong đám đông (cooldown theo global id). Đây là demo kỹ thuật, không phải số liệu đánh giá C1.
+  - Lỗi phát hiện được: với ≥ 2 nguồn RTSP, `ds_app` (cả bản `c1eac87`) crash SIGSEGV trong libproxy của GIO; sửa bằng `GIO_USE_PROXY_RESOLVER=dummy`. Trước đây `ds_app` mới chỉ chạy với file.

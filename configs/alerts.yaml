@@ -14,9 +14,18 @@ cooldown_s: 60.0
 
 smart_record:
   enabled: true
-  pre_s: 5
+  pre_s: 5            # clip = [trigger − pre_s, trigger + post_s] (measured on DS 7.1, smart_record.py)
   post_s: 10
+  cache_s: 15         # nvurisrcbin smart-rec-cache: must exceed pre_s + alert latency
+  min_level: 2        # alerts below this level get no clip
   out_dir: data/evidence
+
+# Live demo (src/analytics_live.py, ds_app --sr-bind)
+live:
+  sync_max_wait_ms: 500   # longest a reference frame waits for the other cameras
+  stale_ms: 2000          # camera without frames this long is left out of sync / reference
+  snapshot_every_ms: 500  # states_latest.json for the dashboard
+  overlay_s: 5            # alert text on the OSD
 
 store:
   sqlite_path: data/alerts.db

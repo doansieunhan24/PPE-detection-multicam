@@ -73,6 +73,42 @@ def load_calibs(cams_cfg: dict, root: Path) -> dict[str, CameraCalibration]:
     return out
 
 
+class Analytics:
+    """PPE fusion + behavior for one synchronized group of frames (shared by the offline
+    runner and src/analytics_live.py, so live and replay give the same alerts)."""
+
+    def __init__(
+        self,
+        config_dir: Path,
+        session_dir: Path | None,
+        policy: str = "P",
+        ablation: dict | None = None,
+        fusion_overrides: dict | None = None,
+    ) -> None:
+        self.fusion_cfg = apply_overrides(load_config("fusion", config_dir), fusion_overrides)
+        self.zones_cfg = load_config("zones", config_dir, override_dir=session_dir)
+        self.cams_cfg = load_config("cameras", config_dir, override_dir=session_dir)
+        self.session_configs = [
+            n for n in SESSION_CONFIGS if session_dir and (session_dir / f"{n}.yaml").exists()
+        ]
+        if self.session_configs:
+            log.info("session config from %s: %s", session_dir, self.session_configs)
+        self.alerts_cfg = load_config("alerts", config_dir)
+        behavior_cfg = load_config("behavior", config_dir)
+        self.calibs = load_calibs(self.cams_cfg, config_dir.parent)
+        levels = self.alerts_cfg.get("levels", {})
+        self.engine = PPEEngine(
+            self.fusion_cfg, self.zones_cfg, self.calibs, policy, ablation or {}, levels
+        )
+        self.behavior = BehaviorEngine(behavior_cfg, self.zones_cfg, levels)
+
+    def step(self, group: dict, ts: int):
+        states, alerts, gid_of = self.engine.step(group, ts)
+        floor_of = {st.global_id: st.floor_xy for st in states}
+        alerts += self.behavior.step(group, ts, gid_of, floor_of)
+        return states, alerts, gid_of
+
+
 def run(
     jsonl_dir: Path,
     out_dir: Path,
@@ -83,15 +119,9 @@ def run(
     fusion_overrides: dict | None = None,
 ) -> dict:
     """fusion_overrides: dotted keys into fusion.yaml (eval/run_sensitivity.py)."""
-    fusion_cfg = apply_overrides(load_config("fusion", config_dir), fusion_overrides)
-    zones_cfg = load_config("zones", config_dir, override_dir=jsonl_dir)
-    cams_cfg = load_config("cameras", config_dir, override_dir=jsonl_dir)
-    overrides = [n for n in SESSION_CONFIGS if (jsonl_dir / f"{n}.yaml").exists()]
-    if overrides:
-        log.info("session config from %s: %s", jsonl_dir, overrides)
-    alerts_cfg = load_config("alerts", config_dir)
-    behavior_cfg = load_config("behavior", config_dir)
-    calibs = load_calibs(cams_cfg, config_dir.parent)
+    an = Analytics(config_dir, jsonl_dir, policy, ablation, fusion_overrides)
+    fusion_cfg, cams_cfg, calibs = an.fusion_cfg, an.cams_cfg, an.calibs
+    alerts_cfg, overrides = an.alerts_cfg, an.session_configs
 
     streams = {
         p.stem: sorted(read_frames(p), key=lambda f: f.ts_ms)
@@ -99,10 +129,6 @@ def run(
     }
     if not streams:
         raise SystemExit(f"no *.jsonl in {jsonl_dir}")
-    engine = PPEEngine(
-        fusion_cfg, zones_cfg, calibs, policy, ablation, alerts_cfg.get("levels", {})
-    )
-    behavior = BehaviorEngine(behavior_cfg, zones_cfg, alerts_cfg.get("levels", {}))
     store = AlertStore(alerts_cfg["store"]["sqlite_path"]) if db else None
     notifier = TelegramNotifier.from_config(alerts_cfg) if db else None
 
@@ -118,9 +144,7 @@ def run(
             ts = min(f.ts_ms for f in group.values())
             t_first = ts if t_first is None else t_first
             t_last = ts
-            states, alerts, gid_of = engine.step(group, ts)
-            floor_of = {st.global_id: st.floor_xy for st in states}
-            alerts += behavior.step(group, ts, gid_of, floor_of)
+            states, alerts, gid_of = an.step(group, ts)
             for s in states:
                 fs.write(s.model_dump_json() + "\n")
             for a in alerts:
