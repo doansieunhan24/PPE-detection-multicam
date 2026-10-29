@@ -1,0 +1,7 @@
+# C2 session split (CLAUDE.md §9 "Đánh giá C1": eval only, split by session).
+# Thresholds, p calibration and v_learned are fitted on `val`; every reported number is on `test`.
+# Session names = folder names under jsonl_root / gt_root.
+jsonl_root: data/jsonl
+gt_root: data/annotations
+val: [s01]
+test: [s02, s03]

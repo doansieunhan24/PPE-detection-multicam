@@ -49,3 +49,4 @@ Mỗi session làm việc có một file. Claude **đọc lại thư mục này 
 | 2026-10-26 | [2026-10-26_s10.md](2026-10-26_s10.md) | Xác nhận 4 thay đổi spec; P0 xong: DS 7.1 trong WSL2, 3 RTSP (TCP) ~30 fps/stream với model mẫu |
 | 2026-10-26 | [2026-10-26_s11.md](2026-10-26_s11.md) | Model dự án trong DS: JSONL khớp offline (assoc F1 0.818 vs 0.810), 3 cam 1080p 26.1 fps/stream |
 | 2026-10-27 | [2026-10-27_s12.md](2026-10-27_s12.md) | Demo live P7: RTSP → DS → ZMQ → analytics → smart record/OSD/dashboard; sửa crash RTSP (libproxy); độ trễ alert median 554 ms @2 fps |
+| 2026-10-29 | [2026-10-29_s13.md](2026-10-29_s13.md) | Sẵn sàng cho C2: `eval.run_c2` một lệnh val → test (tune từng phương pháp, calib C2, số cam, behavior/association), cache observe (toàn chuỗi 100 s), snapshot live, ảnh track để gán nhãn; chạy thử bằng GT WILDTRACK |

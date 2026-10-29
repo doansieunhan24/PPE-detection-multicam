@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from collections.abc import Iterable
 from pathlib import Path
 
-from src.common.schemas import AlertEvent
+from src.common.schemas import AlertEvent, Evidence
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS alerts (
@@ -32,8 +33,22 @@ class AlertStore:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(path), check_same_thread=False)
         self.conn.executescript(_SCHEMA)
+        self.lock = threading.Lock()  # live: snapshot worker writes evidence concurrently
 
     def add(self, a: AlertEvent) -> None:
+        with self.lock:
+            self._add(a)
+
+    def set_evidence(self, alert_id: str, evidence: Evidence) -> bool:
+        with self.lock:
+            cur = self.conn.execute(
+                "UPDATE alerts SET evidence = ? WHERE alert_id = ?",
+                (evidence.model_dump_json(), alert_id),
+            )
+            self.conn.commit()
+        return cur.rowcount == 1
+
+    def _add(self, a: AlertEvent) -> None:
         self.conn.execute(
             "INSERT OR REPLACE INTO alerts VALUES (?,?,?,?,?,?,?,?,?,0)",
             (
@@ -58,8 +73,9 @@ class AlertStore:
         return n
 
     def ack(self, alert_id: str) -> bool:
-        cur = self.conn.execute("UPDATE alerts SET acked = 1 WHERE alert_id = ?", (alert_id,))
-        self.conn.commit()
+        with self.lock:
+            cur = self.conn.execute("UPDATE alerts SET acked = 1 WHERE alert_id = ?", (alert_id,))
+            self.conn.commit()
         return cur.rowcount == 1
 
     def recent(

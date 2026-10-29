@@ -76,10 +76,18 @@ def occlusion_ratio(roi: BBox, occluders: Sequence[BBox], img_w: int, img_h: int
         return 1.0
     xs = x1 + (np.arange(n) + 0.5) * (x2 - x1) / n
     ys = y1 + (np.arange(n) + 0.5) * (y2 - y1) / n
-    gx, gy = np.meshgrid(xs, ys)
-    hidden = (gx < 0) | (gx >= img_w) | (gy < 0) | (gy >= img_h)
-    for ox1, oy1, ox2, oy2 in occluders:
-        hidden |= (gx >= ox1) & (gx < ox2) & (gy >= oy1) & (gy < oy2)
+    x_out = (xs < 0) | (xs >= img_w)
+    y_out = (ys < 0) | (ys >= img_h)
+    # occluders that overlap the ROI at all (most calls have none: fast path)
+    occ = [o for o in occluders if o[0] < x2 and o[2] > x1 and o[1] < y2 and o[3] > y1]
+    if not occ and not x_out.any() and not y_out.any():
+        return 0.0
+    # separable grid: cell (row y, col x) hidden by an occluder iff y in its rows and x in its cols
+    hidden = y_out[:, None] | x_out[None, :]
+    for ox1, oy1, ox2, oy2 in occ:
+        hidden = hidden | (
+            ((ys >= oy1) & (ys < oy2))[:, None] & ((xs >= ox1) & (xs < ox2))[None, :]
+        )
     return float(hidden.mean())
 
 

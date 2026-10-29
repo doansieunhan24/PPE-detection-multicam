@@ -4,9 +4,13 @@ Workflow per session:
 1) template: list every (cam_id, track_id) with first/last time seen → tracks.csv
        python tools/label_intervals.py template --jsonl data/jsonl/s01 --out data/annotations/s01
    Watch the replay videos (tools/replay.py) and fill gt_id for each track (same physical
-   person = same gt_id across cameras; leave empty for false tracks).
+   person = same gt_id across cameras; leave empty for false tracks). Faster: contact sheets
+   with 3 crops per track (largest box, first, last), one page per 20 tracks and camera:
+       python tools/label_intervals.py thumbs --jsonl data/jsonl/s01 --out data/annotations/s01
+   (videos from the session cameras.yaml `uri`, or --video cam1=path ...)
    Fill intervals.csv: gt_id,type,t_start_ms,t_end_ms with type in AlertType
    (PPE_HELMET, PPE_VEST, PPE_BOOTS, INTRUSION, FALL, IMMOBILE, CROWD).
+   CROWD is per zone, not per person: leave its gt_id empty (or "-" in intervals_src.csv).
 2) validate: check both files against the JSONL
        python tools/label_intervals.py validate --jsonl data/jsonl/s01 --ann data/annotations/s01
 
@@ -32,6 +36,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from eval.metrics import PERSONLESS_TYPES  # noqa: E402
 from src.common.jsonl import read_frames  # noqa: E402
 from src.common.schemas import AlertType  # noqa: E402
 
@@ -60,8 +65,11 @@ def parse_clock_ms(text: str) -> int:
     return round(sec * 1000)
 
 
-def parse_gt_id(text: str) -> int:
+def parse_gt_id(text: str) -> int | str:
+    """'P3' | '3' → 3; '' | '-' → '' (zone-level CROWD rows)."""
     t = text.strip()
+    if t in ("", "-"):
+        return ""
     return int(t[1:] if t[:1] in "Pp" else t)
 
 
@@ -83,7 +91,10 @@ def convert_rows(
         b = t0_ms + parse_clock_ms(r["end"]) - anchor_ms
         if b <= a:
             raise SystemExit(f"row {i}: end {r['end']} not after start {r['start']}")
-        out.append([parse_gt_id(r["gt_id"]), r["type"].strip(), a, b, r.get("note") or ""])
+        gt_id, typ = parse_gt_id(r["gt_id"]), r["type"].strip()
+        if (gt_id == "") != (typ in PERSONLESS_TYPES):
+            raise SystemExit(f"row {i}: gt_id must be empty exactly for {sorted(PERSONLESS_TYPES)}")
+        out.append([gt_id, typ, a, b, r.get("note") or ""])
     return out
 
 
@@ -123,6 +134,86 @@ def cmd_template(args: argparse.Namespace) -> None:
     print(f"{len(spans)} tracks -> {out / 'tracks.csv'}; fill gt_id, then intervals.csv")
 
 
+def pick_thumb_frames(jsonl_path: Path) -> dict[int, list[tuple[int, list[float], int]]]:
+    """track_id → [(frame_idx, bbox, ts_ms)] for its largest box, first and last frame."""
+    seen: dict[int, dict[str, tuple]] = {}
+    for fr in read_frames(jsonl_path):
+        for p in fr.persons:
+            e = (fr.frame_idx, list(p.bbox), fr.ts_ms)
+            area = (p.bbox[2] - p.bbox[0]) * (p.bbox[3] - p.bbox[1])
+            d = seen.setdefault(p.track_id, {"first": e, "big": (area, e)})
+            d["last"] = e
+            if area > d["big"][0]:
+                d["big"] = (area, e)
+    return {tid: _dedupe([d["big"][1], d["first"], d["last"]]) for tid, d in seen.items()}
+
+
+def _dedupe(entries: list[tuple]) -> list[tuple]:
+    out: list[tuple] = []
+    for e in entries:
+        if all(e[0] != o[0] for o in out):
+            out.append(e)
+    return out
+
+
+def cmd_thumbs(args: argparse.Namespace) -> None:
+    import cv2
+    import numpy as np
+    import yaml
+
+    jdir, out = Path(args.jsonl), Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    videos = dict(v.split("=", 1) for v in args.video or [])
+    cams_yaml = jdir / "cameras.yaml"
+    if cams_yaml.exists():
+        for c in yaml.safe_load(cams_yaml.read_text(encoding="utf-8")).get("cameras", []):
+            videos.setdefault(c["cam_id"], c.get("uri", ""))
+    t0 = min((fr.ts_ms for p in jdir.glob("*.jsonl") for fr in read_frames(p)), default=0)
+    h = args.height
+    for path in sorted(jdir.glob("*.jsonl")):
+        cam = path.stem
+        src = videos.get(cam)
+        if not src or not Path(src).exists():
+            print(f"{cam}: no video (cameras.yaml uri or --video {cam}=...), skipped")
+            continue
+        picks = pick_thumb_frames(path)
+        need: dict[int, list[tuple[int, list[float]]]] = {}
+        for tid, es in picks.items():
+            for fi, box, _ in es:
+                need.setdefault(fi, []).append((tid, box))
+        crops: dict[tuple[int, int], np.ndarray] = {}
+        cap = cv2.VideoCapture(src)
+        fi, last = 0, max(need) if need else -1
+        while fi <= last:
+            ok, img = cap.read()
+            if not ok:
+                break
+            for tid, (x1, y1, x2, y2) in need.get(fi, []):
+                c = img[max(0, int(y1)) : int(y2), max(0, int(x1)) : int(x2)]
+                if c.size:
+                    crops[(tid, fi)] = cv2.resize(c, (max(1, int(c.shape[1] * h / c.shape[0])), h))
+            fi += 1
+        cap.release()
+        rows = []
+        for tid in sorted(picks, key=lambda t: min(e[2] for e in picks[t])):
+            es = picks[tid]
+            tiles = [crops[(tid, e[0])] for e in es if (tid, e[0]) in crops]
+            a, b = min(e[2] for e in es) - t0, max(e[2] for e in es) - t0
+            cap_img = np.full((h, 260, 3), 255, np.uint8)
+            cv2.putText(cap_img, f"{cam} track {tid}", (8, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+                        (0, 0, 0), 2)  # fmt: skip
+            cv2.putText(cap_img, f"{a / 1000:.1f}-{b / 1000:.1f} s", (8, 80),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (60, 60, 60), 2)  # fmt: skip
+            rows.append(np.hstack([cap_img, *tiles]) if tiles else cap_img)
+        for page in range(0, len(rows), args.per_page):
+            chunk = rows[page : page + args.per_page]
+            w = max(r.shape[1] for r in chunk)
+            sheet = np.vstack([np.pad(r, ((0, 4), (0, w - r.shape[1]), (0, 0)),
+                                      constant_values=255) for r in chunk])  # fmt: skip
+            cv2.imwrite(str(out / f"thumbs_{cam}_{page // args.per_page + 1:02d}.jpg"), sheet)
+        print(f"{cam}: {len(rows)} tracks -> {out}/thumbs_{cam}_*.jpg")
+
+
 def cmd_validate(args: argparse.Namespace) -> None:
     ann = Path(args.ann)
     spans = track_spans(Path(args.jsonl))
@@ -143,8 +234,11 @@ def cmd_validate(args: argparse.Namespace) -> None:
     with open(ann / "intervals.csv", encoding="utf-8", newline="") as f:
         intervals = list(csv.DictReader(f))
     for i, r in enumerate(intervals, 2):
-        if int(r["gt_id"]) not in gt_ids:
-            errors.append(f"intervals.csv:{i}: gt_id {r['gt_id']} has no track")
+        if r["type"] in PERSONLESS_TYPES:
+            if r["gt_id"].strip():
+                errors.append(f"intervals.csv:{i}: {r['type']} is per zone, leave gt_id empty")
+        elif not r["gt_id"].strip() or int(r["gt_id"]) not in gt_ids:
+            errors.append(f"intervals.csv:{i}: gt_id {r['gt_id']!r} has no track")
         if r["type"] not in valid_types:
             errors.append(f"intervals.csv:{i}: bad type {r['type']}")
         a, b = int(r["t_start_ms"]), int(r["t_end_ms"])
@@ -180,8 +274,16 @@ def main(argv: list[str] | None = None) -> None:
     c.add_argument("--ref", default="cam1")
     c.add_argument("--anchor", help="wall time of the first sync event (hh:mm:ss)")
     c.add_argument("--session-check", help="session_check.json (for --clock wall)")
+    th = sub.add_parser("thumbs")
+    th.add_argument("--jsonl", required=True)
+    th.add_argument("--out", required=True)
+    th.add_argument("--video", action="append", help="cam_id=path (default: cameras.yaml uri)")
+    th.add_argument("--height", type=int, default=160)
+    th.add_argument("--per-page", type=int, default=20)
     args = ap.parse_args(argv)
-    {"template": cmd_template, "validate": cmd_validate, "convert": cmd_convert}[args.cmd](args)
+    cmds = {"template": cmd_template, "validate": cmd_validate, "convert": cmd_convert,
+            "thumbs": cmd_thumbs}  # fmt: skip
+    cmds[args.cmd](args)
 
 
 if __name__ == "__main__":

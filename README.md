@@ -44,15 +44,30 @@ python tools/replay.py --jsonl data/jsonl/s01/cam1.jsonl --video data/raw/s01/ca
 
 # 4. Gán nhãn interval
 python tools/label_intervals.py template --jsonl data/jsonl/s01 --out data/annotations/s01
-#    intervals_src.csv: gt_id,type,start,end,note với giờ video cam1 (1:02.5) hoặc giờ phiếu (14:03:30)
+#    intervals_src.csv: gt_id,type,start,end,note với giờ video cam1 (1:02.5) hoặc giờ phiếu (14:03:30);
+#    CROWD theo zone, để trống gt_id (hoặc "-")
 python tools/label_intervals.py convert --jsonl data/jsonl/s01 --src data/annotations/s01/intervals_src.csv \
     --out data/annotations/s01/intervals.csv --clock video --ref cam1
 python tools/label_intervals.py validate --jsonl data/jsonl/s01 --ann data/annotations/s01
 
-# 5. Analytics + bảng chính (B0–B4 vs P + ablation)
-python -m src.analytics_runner --jsonl data/jsonl/s01 --out data/results/s01/P
-python -m eval.run_baselines --sessions data/jsonl/s01 --gt data/annotations --out eval/reports/main --ablations
-python -m eval.run_sensitivity --sessions data/jsonl/s01 --gt data/annotations --out eval/reports/sensitivity --jobs 4
+# 5. Toàn bộ thí nghiệm C2 bằng một lệnh (split val/test trong configs/c2_split.yaml):
+#    check → calib (p calibration + v_learned trên val) → tune (từng phương pháp, trên val)
+#    → main (B0–B4 + B0/B1 mỗi cam vs P + ablation, trên test; cả bản chưa tune) → sens → numcams
+#    → eval/reports/c2/REPORT.md. Bảng có thêm từng item PPE, behavior (fall/immobile/intrusion/crowd)
+#    và association (pairwise P/R/F1 theo tracks.csv).
+python -m eval.run_c2 --steps check          # chạy trước: nhãn, homography, split
+python -m eval.run_c2 --out eval/reports/c2 --jobs 4
+#    Từng bước riêng (cùng code):
+python -m src.analytics_runner --jsonl data/jsonl/s01 --out data/results/s01/P [--cams cam1 cam2]
+python -m eval.tune_c2 --sessions data/jsonl/s01 --gt data/annotations --out eval/reports/c2/tune --jobs 4
+python -m eval.run_baselines --sessions data/jsonl/s02 data/jsonl/s03 --gt data/annotations \
+    --out eval/reports/c2/main --ablations --single-cam-all --tuned eval/reports/c2/tune/tuned.json
+python -m eval.run_sensitivity --sessions data/jsonl/s02 --gt data/annotations --out eval/reports/c2/sens --jobs 4
+python -m eval.run_num_cams --sessions data/jsonl/s02 data/jsonl/s03 --gt data/annotations --out eval/reports/c2/numcams
+#    Chạy thử toàn chuỗi trước khi có C2 (GT thật của WILDTRACK, 3 cam):
+python tools/wildtrack_rehearsal.py --src data/rehearsal/wt3/jsonl \
+    --gt data/external/wildtrack/prepared/gt.jsonl --out data/rehearsal/wt3_gt
+python -m eval.run_c2 --split data/rehearsal/wt3_gt/split.yaml --out data/rehearsal/wt3_gt/report --jobs 4
 
 # 6. Alert + dashboard (P7): lưu SQLite (+Telegram nếu bật trong configs/alerts.yaml, token trong .env)
 python -m src.analytics_runner --jsonl data/jsonl/s01 --out data/results/s01/P --db

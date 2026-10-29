@@ -11,6 +11,8 @@ Frames are grouped across cameras by LiveSyncer (streaming version of sync_group
 <out>/alerts.jsonl (+ latency_ms = emit wall time − t_raise_ms; for RTSP sources ts_ms is the
 probe's wall clock, so this is the end-to-end alert latency of §8 minus the T_alert hold),
 <out>/states_latest.json (dashboard), optional <out>/states.jsonl, <out>/live_stats.json.
+With smart record, each recorded alert also gets a snapshot with overlay taken from its clip
+(src/alerts/snapshot.py) → <evidence>/<alert_id>_<cam>.jpg, SQLite evidence updated.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from pathlib import Path
 import numpy as np
 
 from src.alerts.notifier_telegram import TelegramNotifier
+from src.alerts.snapshot import SnapshotMaker
 from src.alerts.store import AlertStore
 from src.analytics_runner import Analytics, git_commit
 from src.common.config import DEFAULT_CONFIG_DIR
@@ -154,6 +157,7 @@ def run_live(
     trigger: TriggerClient | None = None,
     save_states: bool = False,
     max_groups: int | None = None,
+    snapshots: SnapshotMaker | None = None,
 ) -> dict:
     live_cfg = an.alerts_cfg.get("live", {})
     sr_cfg = an.alerts_cfg.get("smart_record", {})
@@ -181,8 +185,10 @@ def run_live(
         nonlocal n_groups, n_alerts
         ts = min(f.ts_ms for f in group.values())
         t_step = time.perf_counter()
-        states, alerts, _gid_of = an.step(group, ts)
+        states, alerts, gid_of = an.step(group, ts)
         step_ms.append((time.perf_counter() - t_step) * 1000)
+        if snapshots is not None:
+            snapshots.add_group(group, gid_of)
         n_groups += 1
         for st in states:
             latest[st.global_id] = st.model_dump(mode="json")
@@ -192,6 +198,8 @@ def run_live(
             rec = record and a.level >= record_min and bool(a.cams)
             if rec:
                 a.evidence.clip = clip_name(a.alert_id, a.cams[0])
+                if snapshots is not None:
+                    snapshots.request(a, a.evidence.clip)
             lat = now_ms() - a.t_raise_ms
             alert_lat.append(lat)
             fa.write(json.dumps(a.model_dump(mode="json") | {"latency_ms": lat}) + "\n")
@@ -253,6 +261,12 @@ def run_live(
         "step_ms": _pct(step_ms),
         "alert_latency_ms": _pct(alert_lat),
     }
+    if snapshots is not None:
+        snapshots.close(snapshots.timeout_s)
+        stats["snapshots"] = {
+            "requested": len(snapshots.done),
+            "written": sum(d["snapshot"] is not None for d in snapshots.done),
+        }
     (out_dir / "live_stats.json").write_text(json.dumps(stats, indent=2), encoding="utf-8")
     log.info("live: %s", json.dumps(stats))
     return stats
@@ -274,6 +288,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--out", required=True)
     ap.add_argument("--no-db", action="store_true", help="do not write the SQLite alert store")
     ap.add_argument("--save-states", action="store_true", help="also append states.jsonl")
+    ap.add_argument("--no-snapshot", action="store_true", help="no snapshot from the clips")
     args = ap.parse_args(argv)
     setup_logging()
 
@@ -282,6 +297,12 @@ def main(argv: list[str] | None = None) -> None:
     source = zmq_frames(args.zmq) if args.zmq else replay_frames(Path(args.replay), args.speed)
     store = None if args.no_db else AlertStore(an.alerts_cfg["store"]["sqlite_path"])
     trigger = TriggerClient(args.sr) if args.sr else None
+    sr_cfg = an.alerts_cfg.get("smart_record", {})
+    snapshots = (
+        SnapshotMaker(Path(sr_cfg["out_dir"]), sr_cfg["pre_s"], sr_cfg["post_s"], store)
+        if trigger is not None and sr_cfg.get("enabled") and not args.no_snapshot
+        else None
+    )
     try:
         run_live(
             source,
@@ -291,6 +312,7 @@ def main(argv: list[str] | None = None) -> None:
             notifier=TelegramNotifier.from_config(an.alerts_cfg),
             trigger=trigger,
             save_states=args.save_states,
+            snapshots=snapshots,
         )
     finally:
         if trigger is not None:

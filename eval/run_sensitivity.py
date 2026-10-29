@@ -19,7 +19,7 @@ import json
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-from eval.run_baselines import _pool, evaluate
+from eval.run_baselines import _pool, evaluate, overrides_for
 from src.analytics_runner import git_commit, run
 from src.common.config import DEFAULT_CONFIG_DIR, apply_overrides, load_config
 from src.common.logging import get_logger, setup_logging
@@ -39,11 +39,12 @@ COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]
 
 
 def _one(job: tuple) -> tuple[str, float, str, dict]:
-    key, value, policy, sessions, gt, out, config, delta_ms = job
+    key, value, policy, sessions, gt, out, config, delta_ms, base, obs_cache = job
     rows = []
     for s in map(Path, sessions):
         run_dir = Path(out) / "runs" / s.name / f"{key}={value}" / policy
-        run(s, run_dir, Path(config), policy, {}, fusion_overrides={key: value})
+        run(s, run_dir, Path(config), policy, {}, fusion_overrides={**base, key: value},
+            obs_cache=obs_cache)  # fmt: skip
         rows.append(evaluate(run_dir, Path(gt) / s.name, delta_ms))
     return key, value, policy, _pool(rows)
 
@@ -111,10 +112,14 @@ def main(argv: list[str] | None = None) -> None:
         help="fusion.yaml dotted key and values (repeatable); default: DEFAULT_SWEEPS",
     )
     ap.add_argument("--jobs", type=int, default=1)
+    ap.add_argument("--tuned", help="sweep around these values (eval/tune_c2.py tuned.json)")
+    ap.add_argument("--obs-cache", help="dir caching policy-independent work (faster reruns)")
     args = ap.parse_args(argv)
     setup_logging()
 
     sweeps = {p[0]: [float(v) for v in p[1:]] for p in args.param} if args.param else DEFAULT_SWEEPS
+    tuned = json.loads(Path(args.tuned).read_text(encoding="utf-8")) if args.tuned else {}
+    tuned = tuned.get("overrides", tuned)
     fusion_cfg = load_config("fusion", Path(args.config))
     defaults = {}
     for key in sweeps:
@@ -124,17 +129,34 @@ def main(argv: list[str] | None = None) -> None:
             node = node[k]
         defaults[key] = node
 
+    base = {pol: overrides_for(pol, pol, tuned) for pol in args.policies}
+    if tuned:  # the marked "default" of each curve is the tuned value (of P) when there is one
+        for key in sweeps:
+            if key in base.get("P", {}):
+                defaults[key] = base["P"][key]
     jobs = [
-        (key, v, pol, args.sessions, args.gt, args.out, args.config, args.delta_ms)
+        (
+            key,
+            v,
+            pol,
+            args.sessions,
+            args.gt,
+            args.out,
+            args.config,
+            args.delta_ms,
+            base[pol],
+            Path(args.obs_cache) if args.obs_cache else None,
+        )  # fmt: skip
         for key, values in sweeps.items()
         for pol in args.policies
         if pol == "P" or key not in P_ONLY
         for v in values
     ]
     log.info("%d runs x %d sessions", len(jobs), len(args.sessions))
-    if args.jobs > 1:
+    if args.jobs > 1 and jobs:
+        done = [_one(jobs[0])]  # builds the observation cache once, before the pool
         with ProcessPoolExecutor(args.jobs) as ex:
-            done = list(ex.map(_one, jobs))
+            done += list(ex.map(_one, jobs[1:]))
     else:
         done = [_one(j) for j in jobs]
 
@@ -146,6 +168,7 @@ def main(argv: list[str] | None = None) -> None:
         "sessions": args.sessions,
         "delta_ms": args.delta_ms,
         "defaults": defaults,
+        "tuned": tuned,
     }
     (out / "results.json").write_text(
         json.dumps({"meta": meta, "rows": rows}, indent=2), encoding="utf-8"

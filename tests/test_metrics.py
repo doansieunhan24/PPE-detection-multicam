@@ -67,3 +67,32 @@ def test_load_gt_csv(tmp_path):
     p = tmp_path / "gt.csv"
     p.write_text("gt_id,type,t_start_ms,t_end_ms\n1,PPE_HELMET,0,1000\n", encoding="utf-8")
     assert load_gt_csv(p) == [GTInterval(1, "PPE_HELMET", 0, 1000)]
+
+
+def test_crowd_is_matched_without_person():
+    gt = [GTInterval(None, "CROWD", 10_000, 20_000)]
+    a = AlertEvent(alert_id="c", type=AlertType.CROWD, level=2, zone="Z1",
+                   t_start_ms=9_000, t_raise_ms=12_000)  # fmt: skip
+    m = event_metrics([a, a.model_copy(update={"t_raise_ms": 50_000})], gt, {}, 3600)
+    assert (m.tp, m.fp, m.fn) == (1, 1, 0)
+
+
+def test_load_gt_csv_empty_gt_id(tmp_path):
+    p = tmp_path / "gt.csv"
+    p.write_text("gt_id,type,t_start_ms,t_end_ms\n,CROWD,0,1000\n", encoding="utf-8")
+    assert load_gt_csv(p) == [GTInterval(None, "CROWD", 0, 1000)]
+
+
+def test_association_metrics():
+    from eval.metrics import association_metrics
+
+    track_gt = {("c1", 1): 1, ("c2", 7): 1, ("c1", 2): 2, ("c2", 8): 2}
+    obs = [
+        (0, "c1", 1, 10), (0, "c2", 7, 10), (0, "c1", 2, 11), (0, "c2", 8, 11),  # all right
+        (40, "c1", 1, 10), (40, "c2", 7, 12), (40, "c1", 2, 11), (40, "c2", 8, 11),  # 1 split
+        (80, "c1", 1, 10), (80, "c2", 8, 10), (80, "c3", 9, 10),  # wrong merge; c3 unlabelled
+    ]  # fmt: skip
+    m = association_metrics(obs, track_gt)
+    assert (m["pair_tp"], m["pair_fp"], m["pair_fn"]) == (3, 1, 1)
+    assert m["count_mae"] == pytest.approx(2 / 3)  # t=40: 3 gids vs 2 gts; t=80: 1 vs 2
+    assert m["frag"] == pytest.approx(2.0)  # gt 1 → {10, 12}, gt 2 → {11, 10}

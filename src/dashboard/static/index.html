@@ -88,7 +88,8 @@ async function listAlerts() {
   tb.replaceChildren(...rows.map(a => {
     const tr = document.createElement("tr");
     if (a.acked) tr.className = "acked";
-    const clip = a.evidence && a.evidence.clip ? ` <a href="/evidence/${a.evidence.clip}">clip</a>` : "";
+    const clip = (a.evidence && a.evidence.clip ? ` <a href="/evidence/${a.evidence.clip}">clip</a>` : "")
+      + (a.evidence && a.evidence.snapshot ? ` <a href="/evidence/${a.evidence.snapshot}">ảnh</a>` : "");
     tr.innerHTML = `<td class="L${a.level}">L${a.level}</td><td>${a.type}${a.zone ? " · " + a.zone : ""}${clip}</td>` +
       `<td>${a.global_id ?? "–"}</td><td>${new Date(a.t_raise_ms).toLocaleTimeString()}</td><td></td>`;
     if (!a.acked) {

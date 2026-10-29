@@ -155,3 +155,55 @@ def test_live_runner_matches_offline(tmp_path):
     assert [key(a) for a in a_live] == [key(a) for a in a_off]
     snap = latest_states(tmp_path / "live")  # dashboard reads states_latest.json from the dir
     assert sorted(s["global_id"] for s in snap) == [1, 2]  # uncalibrated: one gid per cam
+
+
+def test_snapshot_clip_offsets():
+    from src.alerts.snapshot import clip_offset_ms
+
+    assert clip_offset_ms(100_000, None, 5, 10) == (5000, 100_000)  # new recording
+    assert clip_offset_ms(104_000, 100_000, 5, 10) == (9000, 100_000)  # shares running clip
+    assert clip_offset_ms(111_000, 100_000, 5, 10) == (5000, 111_000)  # previous one ended
+
+
+def test_snapshot_from_clip_updates_store(tmp_path):
+    import cv2
+    import numpy as np
+
+    from src.alerts.snapshot import SnapshotMaker
+    from src.alerts.store import AlertStore
+    from src.common.schemas import AlertEvent, AlertType
+
+    # 3 s clip, 10 fps; frame k is filled with gray level 10*k so the chosen frame is visible
+    clip = tmp_path / "a1_cam1.mp4"
+    w = cv2.VideoWriter(str(clip), cv2.VideoWriter_fourcc(*"mp4v"), 10, (320, 180))
+    for k in range(30):
+        w.write(np.full((180, 320, 3), 8 * k, np.uint8))
+    w.release()
+    store = AlertStore(tmp_path / "a.db")
+    a = AlertEvent(alert_id="a1", type=AlertType.PPE_HELMET, level=2, global_id=4,
+                   t_start_ms=7_000, t_raise_ms=10_000, cams=["cam1"])  # fmt: skip
+    store.add(a)
+    sm = SnapshotMaker(tmp_path, pre_s=2, post_s=1, store=store, settle_s=0)
+    p = PersonDet(track_id=3, bbox=[192, 108, 384, 540], conf=0.9, kpts=[])
+    sm.add_group({"cam1": _fr("cam1", 10_000, [p])}, {("cam1", 3): 4})
+    sm.request(a, clip.name)
+    sm.close(10)
+    assert sm.done == [{"alert_id": "a1", "snapshot": "a1_cam1.jpg"}]
+    img = cv2.imread(str(tmp_path / "a1_cam1.jpg"))
+    assert abs(int(img[170, 300].mean()) - 8 * 20) < 12  # frame at 2 s (= pre_s) of the clip
+    b, g, r = (int(x) for x in img[60, 32])  # alerted person box (1920→320 scale): red
+    assert b < 40 and g < 40 and r > 215
+    assert store.recent()[0]["evidence"]["snapshot"] == "a1_cam1.jpg"
+
+
+def test_snapshot_missing_clip_times_out(tmp_path):
+    from src.alerts.snapshot import SnapshotMaker
+    from src.common.schemas import AlertEvent, AlertType
+
+    sm = SnapshotMaker(tmp_path, pre_s=2, post_s=1, timeout_s=0.2)
+    a = AlertEvent(alert_id="a2", type=AlertType.INTRUSION, level=2, t_start_ms=0,
+                   t_raise_ms=1000, cams=["cam2"])  # fmt: skip
+    sm.request(a, "a2_cam2.mp4")
+    time.sleep(1.2)
+    sm.close(5)
+    assert sm.done == [{"alert_id": "a2", "snapshot": None}]

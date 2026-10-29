@@ -2,6 +2,10 @@
 
 frames → foot point → floor (if calibrated) → association → global_id
        → part ROI → p, v per camera → policy (P or B0–B4) → state → PPE alert rules
+
+step() = decide(observe()): observe() is everything that does not depend on the policy or on
+the evidence / alert / baseline thresholds, so eval can cache it and replay many policies
+(src/analytics_runner.py obs_cache).
 """
 
 from __future__ import annotations
@@ -40,6 +44,18 @@ class Zone:
 
 
 @dataclass
+class Observed:
+    """Policy-independent view of one global person at one instant."""
+
+    gid: int
+    floor: tuple[float, float] | None
+    zone_id: str | None
+    required: frozenset[str]
+    cams: list[str]
+    parts: dict[PartName, tuple[list[CamObs], dict[str, CamEvidence]]]
+
+
+@dataclass
 class PPEEngine:
     fusion_cfg: dict
     zones_cfg: dict
@@ -61,6 +77,7 @@ class PPEEngine:
             Zone(z["id"], z["type"], [tuple(p) for p in z["polygon_m"]], z.get("required_ppe", []))
             for z in self.zones_cfg.get("zones", [])
         ]
+        self.zone_by_id = {z.id: z for z in self.zones}
         self.default_required = self.zones_cfg.get("default_required_ppe", [])
         self.policies: dict[tuple[int, PartName], Policy] = {}
         persistence = self.policy_id != "B0"
@@ -92,6 +109,13 @@ class PPEEngine:
     def step(
         self, group: Mapping[str, PerceptionFrame], ts_ms: int
     ) -> tuple[list[PersonPartState], list[AlertEvent], dict[PersonKey, int]]:
+        observed, gid_of = self.observe(group, ts_ms)
+        states, alerts = self.decide(ts_ms, observed)
+        return states, alerts, gid_of
+
+    def observe(
+        self, group: Mapping[str, PerceptionFrame], ts_ms: int
+    ) -> tuple[list[Observed], dict[PersonKey, int]]:
         gid_of = self.associate(group, ts_ms)
         members: dict[int, list[tuple[str, PersonDet, PerceptionFrame]]] = {}
         for cam, fr in group.items():
@@ -110,7 +134,7 @@ class PPEEngine:
                     for q, a in zip(fr.persons, owners, strict=True):
                         allowed[(cam, q.track_id, part)] = a
 
-        states, alerts = [], []
+        observed = []
         for gid, mem in members.items():
             located = [
                 (xy, p.truncated_bottom)
@@ -122,7 +146,7 @@ class PPEEngine:
             floor = tuple(np.mean(xys, axis=0).tolist()) if xys else None
             zone = self._zone_of(floor) if floor else None
             required = zone.required_ppe if zone else self.default_required
-            parts: dict[PartName, PartState] = {}
+            parts_obs = {}
             for part, spec in self.parts.items():
                 obs, per_cam = [], {}
                 for cam, p, fr in mem:
@@ -140,6 +164,28 @@ class PPEEngine:
                     v = visibility(roi, p.bbox, others, fr.img_w, fr.img_h, self.vis_prm).v
                     obs.append(CamObs(cam, ob.p, v, p.conf, detected=ob.matched is not None))
                     per_cam[cam] = CamEvidence(p=ob.p, v=v)
+                parts_obs[part] = (obs, per_cam)
+            observed.append(
+                Observed(
+                    gid,
+                    floor,
+                    zone.id if zone else None,
+                    frozenset(required),
+                    sorted({c for c, _, _ in mem}),
+                    parts_obs,
+                )
+            )
+        return observed, gid_of
+
+    def decide(
+        self, ts_ms: int, observed: list[Observed]
+    ) -> tuple[list[PersonPartState], list[AlertEvent]]:
+        states, alerts = [], []
+        for o in observed:
+            gid = o.gid
+            parts: dict[PartName, PartState] = {}
+            for part, spec in self.parts.items():
+                obs, per_cam = o.parts[part]
                 pol = self._policy(gid, part)
                 st = pol.update(ts_ms, obs)
                 ev = getattr(pol, "evidence", None)
@@ -155,9 +201,9 @@ class PPEEngine:
                     spec["item"],
                     st,
                     ts_ms,
-                    required=spec["item"] in required,
-                    zone=zone.id if zone else None,
-                    cams=sorted({c for c, _, _ in mem}),
+                    required=spec["item"] in o.required,
+                    zone=o.zone_id,
+                    cams=o.cams,
                 )
                 if a:
                     alerts.append(a)
@@ -165,9 +211,9 @@ class PPEEngine:
                 PersonPartState(
                     global_id=gid,
                     ts_ms=ts_ms,
-                    floor_xy=floor,
+                    floor_xy=o.floor,
                     parts=parts,
-                    zone=zone.id if zone else None,
+                    zone=o.zone_id,
                 )
             )
-        return states, alerts, gid_of
+        return states, alerts

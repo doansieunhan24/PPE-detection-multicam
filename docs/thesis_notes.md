@@ -60,3 +60,8 @@
 - Kiến trúc metadata-first (D4) giữ nguyên khi chạy live: DeepStream chỉ xuất PerceptionFrame qua ZMQ, analytics live dùng **cùng lớp `Analytics`** với bản offline. Có test chứng minh replay qua đường live cho cùng alert với runner offline, nên các số eval offline đại diện cho hệ thống live.
 - Vòng phản hồi: alert → ZMQ → `start-sr` của nvurisrcbin → clip bằng chứng [−5 s, +10 s] quanh lúc kích (đo được 14 s ở 2 fps), có cả chữ alert trên OSD. Có thể vẽ sơ đồ này trong chương hệ thống.
 - Số liệu demo trên WILDTRACK (2 fps): độ trễ alert median 0.55 s, chủ yếu do chờ đồng bộ đa cam; cần đo lại ở fps thật của C2.
+
+## Quy trình đánh giá C2 (2026-10-29)
+- Tune ngưỡng **cho từng phương pháp** trên session val bằng cùng một thủ tục (coordinate descent, cùng mục tiêu F1), báo cáo trên session test. Nhờ vậy baseline không bị thiệt vì dùng ngưỡng mặc định (§14.6). Có thêm bảng "chưa tune" để thấy tác động của việc tune.
+- Hiệu chỉnh p và v_learned có thể fit lại trên C2 val: đa góc nhìn cho phép cùng một người (GT cố định) được quan sát với visibility khác nhau. Ảnh đơn không làm được điều này (GT bị điều kiện theo visibility, xem 2026-10-22).
+- Số camera 1/2/3: lấy trung bình trên mọi tập con cùng kích thước (không chọn cam tốt nhất).

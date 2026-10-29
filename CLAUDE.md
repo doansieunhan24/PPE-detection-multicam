@@ -428,7 +428,7 @@ else:                    state = state_{t−1}        # hysteresis
 | P8 | 12–14 | Ablation, sensitivity, FPS bench, (optional) Jetson Orin | Toàn bộ bảng/biểu đồ trong `eval/reports/` |
 | P9 | 14–16 | Viết thuyết minh, slide, video demo | — |
 
-**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (association đã kiểm chứng trên WILDTRACK). Chuỗi xử lý C2 (session_check → nhãn → baselines/ablation/sensitivity) đã chạy thử từ đầu đến cuối. P6: event metrics cho fall (UR Fall + MCFD), intrusion và crowd (WILDTRACK); immobility chờ C2. P0 xong; P1/P2 phần DeepStream xong: YOLO11m-pose + NvDCF + SGIE PPE chạy trong DS 7.1, JSONL khớp backend offline, 3 cam 1080p đạt 26 fps/stream (4 cam 19.8). P7 demo live end-to-end chạy được (RTSP → DS → ZMQ → `analytics_live` → SQLite/dashboard, smart record theo alert, OSD qua mediamtx). Chờ dữ liệu C2 (P4). Chi tiết: `process/STATUS.md`.
+**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (association đã kiểm chứng trên WILDTRACK). Chuỗi xử lý C2 (session_check → nhãn → baselines/ablation/sensitivity) đã chạy thử từ đầu đến cuối. P6: event metrics cho fall (UR Fall + MCFD), intrusion và crowd (WILDTRACK); immobility chờ C2. P0 xong; P1/P2 phần DeepStream xong: YOLO11m-pose + NvDCF + SGIE PPE chạy trong DS 7.1, JSONL khớp backend offline, 3 cam 1080p đạt 26 fps/stream (4 cam 19.8). P7 demo live end-to-end chạy được (RTSP → DS → ZMQ → `analytics_live` → SQLite/dashboard, smart record theo alert, OSD qua mediamtx). Chờ dữ liệu C2 (P4). Đánh giá C2 đã gom thành một lệnh `python -m eval.run_c2` (val → test, tune từng phương pháp, mọi bảng §10.3 trừ detector/FPS), đã chạy thử bằng GT WILDTRACK. Chi tiết: `process/STATUS.md`.
 
 ---
 
@@ -523,6 +523,10 @@ pytest -q && ruff check src eval tools
 | 2026-10-26 | Engine PGIE batch 4 dùng chung cho 1–4 cam (`ds_app` đặt batch-size = số cam); ONNX DS để ở `models/ds/` | Build engine pose mất khoảng 6 phút; layout ONNX của DeepStream-Yolo khác bản Ultralytics |
 | 2026-10-27 | **Kênh live:** `ds_app` bind ZMQ PUB :5555 (PerceptionFrame) và PULL :5556 (alert từ analytics → smart record + chữ trên OSD); `src/analytics_live.py` dùng cùng lớp `Analytics` với runner offline, ghép frame bằng `LiveSyncer` | Giữ D4: live và replay cho cùng alert (có test). Clip bằng chứng [−pre_s, +post_s] quanh lúc kích |
 | 2026-10-27 | `ds_app` đặt `GIO_USE_PROXY_RESOLVER=dummy` | ≥ 2 nguồn RTSP crash SIGSEGV trong libproxy của GIO (gdb), cả bản trước đó |
+| 2026-10-29 | **Đánh giá C2: tune trên session val, báo cáo trên session test** (`configs/c2_split.yaml`, `eval/run_c2.py`). Ngưỡng tune **cho từng phương pháp** bằng cùng thủ tục (coordinate descent, mục tiêu F1 PPE val, `eval/tune_c2.SPACE`); hiệu chỉnh p / v_learned fit lại trên C2 val, bộ phận thiếu mẫu (< 50 mỗi lớp) giữ fit SH17/CHV; báo kèm bảng chưa tune | Công bằng giữa baseline và P (§14.6); tránh báo số trên tập đã tune |
+| 2026-10-29 | CROWD gán nhãn theo zone (`gt_id` trống), ghép theo loại + thời gian | Tụ tập không thuộc về một người |
+| 2026-10-29 | `PPEEngine.step = decide(observe())`; eval cache phần observe (`run(obs_cache=)`) | Observe không phụ thuộc policy và mục `evidence/alert/baselines`; test chứng minh cùng output; toàn chuỗi C2 chạy thử 100 s |
+| 2026-10-29 | Snapshot alert live lấy từ clip smart record + overlay vẽ từ metadata (`src/alerts/snapshot.py`) | Clip smart record không có OSD; offset chính xác khoảng 1 GOP |
 | — | Số cam / loại cam / có Jetson Orin không: `TODO` | |
 
 ---
@@ -546,5 +550,5 @@ pytest -q && ruff check src eval tools
 - Dữ liệu té ngã là té giả, có thể khác té thật.
 - Người bị cắt chân ở mép dưới ảnh (đứng sát cam đặt thấp) có điểm sàn sai khoảng 0.6–0.8 m. Chỉ giảm được tác động (gate riêng, ưu tiên cam khác), không sửa được vị trí.
 - Offline backend (Ultralytics) không đạt real-time cho đa luồng (khoảng 16 fps tổng ở 1080p trên RTX 4060 Laptop). DeepStream đạt khoảng 80 fps tổng: real-time 25 fps tối đa 3 cam 1080p trên GPU laptop này (4 cam còn 19.8 fps/cam).
-- Clip bằng chứng live (smart record) là stream gốc của camera, không có OSD; chỉ hoạt động với nguồn RTSP.
+- Clip bằng chứng live (smart record) là stream gốc của camera, không có OSD (snapshot có overlay vẽ lại từ metadata, lệch tối đa khoảng 1 GOP); chỉ hoạt động với nguồn RTSP.
 - Bộ tự thu có quy mô nhỏ, chưa phải môi trường công nghiệp thật (nếu đúng như vậy).
