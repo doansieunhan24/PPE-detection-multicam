@@ -2,7 +2,10 @@
 
 Coordinate descent over SPACE[policy] (dotted fusion.yaml keys): start from the config values,
 sweep one key at a time with the others fixed at their current best, keep the best value,
-repeat for --rounds. Objective on the pooled PPE events of the val sessions:
+repeat for --rounds. A best value on the edge of its grid adds the next value beyond it (half /
+double, within BOUNDS; up to 3 times per key) and the search goes on, so the result is not an
+artefact of the grid range; "at_edge" lists keys still on the edge after that.
+Objective on the pooled PPE events of the val sessions:
 
   f1          maximise F1; ties → lower FA/hour, then the value closest to the default
   fa@recall   minimise FA/hour subject to recall ≥ --min-recall (else maximise recall)
@@ -47,6 +50,17 @@ SPACE: dict[str, dict[str, list[float]]] = {
     "B3": {"baselines.pos_thr": POS_THR, "alert.T_alert_s": T_ALERT},
     "B4": {"alert.T_alert_s": T_ALERT},  # B4 reads calibrated p, not pos_thr
 }
+# valid range of a key when the grid is extended past its edge (others: any value of that sign)
+BOUNDS = {"baselines.pos_thr": (0.02, 0.95), "alert.T_alert_s": (0.2, 60.0)}
+
+
+def extend_value(key: str, v: float, at_min: bool) -> float | None:
+    """Next grid value beyond an edge: halve / double the magnitude (keeps the sign)."""
+    smaller = at_min == (v > 0)  # min of positives → smaller; min of negatives → more negative
+    nv = v / 2 if smaller else v * 2
+    lo, hi = BOUNDS.get(key, (-float("inf"), float("inf")))
+    nv = min(max(nv, lo), hi)
+    return None if nv == v or v == 0 else round(nv, 6)
 
 
 def _get(cfg: dict, key: str):
@@ -107,10 +121,12 @@ def tune(
     space: dict[str, dict[str, list[float]]] | None = None,
     base: dict[str, dict] | None = None,
     obs_cache: Path | None = None,
+    max_extend: int = 3,
 ) -> dict:
     """base: fixed overrides per policy ("*" = all), e.g. a C2-fitted p calibration for P."""
-    space = space or SPACE
+    space = {p: {k: list(v) for k, v in d.items()} for p, d in (space or SPACE).items()}
     base = base or {}
+    n_ext: dict[tuple[str, str], int] = {}
     fusion_cfg = load_config("fusion", Path(config))
     best: dict[str, dict] = {}
     trace: list[dict] = []
@@ -137,7 +153,7 @@ def tune(
         for p, ov, r in done:
             cache[(p, tuple(sorted(ov.items())))] = r
 
-    for rnd in range(rounds):
+    for rnd in range(rounds + max_extend):
         changed = False
         for key in dict.fromkeys(k for p in policies for k in space[p]):
             cands = []
@@ -167,6 +183,14 @@ def tune(
                 if v_best != default:
                     best[pol][key] = v_best
                     changed = True
+                grid = space[pol][key]
+                if len(vals) > 1 and v_best in (vals[0], vals[-1]):  # tried values incl. default
+                    nv = extend_value(key, v_best, v_best == vals[0])
+                    if nv is not None and nv not in grid and n_ext.get((pol, key), 0) < max_extend:
+                        grid.append(nv)  # best value on the edge: search one step further
+                        n_ext[(pol, key)] = n_ext.get((pol, key), 0) + 1
+                        changed = True
+                        log.info("%s: %s=%g on the grid edge → also try %g", pol, key, v_best, nv)
         log.info("round %d: %s", rnd, best)
         if not changed:
             break
@@ -179,9 +203,9 @@ def tune(
         merged[p] = {**base.get(p, {}), **best[p]}
     edge = at_edge(best, space)
     for p, k, v in edge:
-        log.warning("%s: %s tuned to the grid edge (%g); consider widening SPACE", p, k, v)
+        log.warning("%s: %s still on the grid edge (%g) after extending", p, k, v)
     return {"overrides": merged, "searched": best, "val_metrics": final, "trace": trace,
-            "at_edge": edge}  # fmt: skip
+            "at_edge": edge, "grids": space}  # fmt: skip
 
 
 def main(argv: list[str] | None = None) -> None:

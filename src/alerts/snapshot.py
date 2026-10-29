@@ -54,9 +54,9 @@ def draw_overlay(img, frame: PerceptionFrame | None, gid_of: dict[int, int], a: 
         sy = img.shape[0] / frame.img_h
         for p in frame.persons:
             hit = a.global_id is not None and gid_of.get(p.track_id) == a.global_id
-            col = (0, 0, 255) if hit else (200, 200, 200)
+            col = (0, 0, 255) if hit else (0, 220, 255)
             x1, y1, x2, y2 = (int(v * s) for v, s in zip(p.bbox, (sx, sy, sx, sy), strict=True))
-            cv2.rectangle(img, (x1, y1), (x2, y2), col, 3 if hit else 1)
+            cv2.rectangle(img, (x1, y1), (x2, y2), col, 3 if hit else 2)
             gid = gid_of.get(p.track_id)
             cv2.putText(img, f"g{gid}" if gid is not None else f"t{p.track_id}",
                         (x1, max(12, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)  # fmt: skip
@@ -159,7 +159,8 @@ class SnapshotMaker:
                     ok = render_snapshot(job, jpg)
                     pending.remove(job)
                     self._finish(job, jpg if ok else None)
-                elif time.monotonic() > job.deadline or stop and not job.clip.exists():
+                elif time.monotonic() > job.deadline:  # also after close(): a clip triggered
+                    # just before the stop is still being recorded (post_s), so keep waiting
                     pending.remove(job)
                     self._finish(job, None)
 

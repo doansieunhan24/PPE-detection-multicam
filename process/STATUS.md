@@ -16,8 +16,8 @@
 - P0 (s10): DS 7.1 WSL2, 3 RTSP TCP ~30 fps/stream (model mẫu)
 - DS với model dự án (s11): khớp offline (assoc F1 0.818 vs 0.810), 1/2/3/4 stream → 67.7/40.6/26.1/19.8 fps mỗi stream
 - **Demo live (s12):** `ds_app --zmq-pub --sr-bind --osd`, `src/analytics_live.py` (ZMQ hoặc `--replay`), `LiveSyncer`, smart record, dashboard có video WebRTC. Chạy 180 s trên wt3 RTSP 2 fps: 2 fps/cam, 0 frame mất, 91 alert, độ trễ alert median 554 ms, 37/37 clip bằng chứng. Sửa crash RTSP (libproxy GIO). Lệnh: `docker/README.md` mục "Demo live"
-- **(s13) Sẵn sàng cho C2:** `eval/run_c2.py` (check → calib p/v_learned trên val → tune từng phương pháp trên val → B0–B4 + B0/B1 mỗi cam + P + ablation trên test → sensitivity → số cam 1/2/3 → `REPORT.md`), bảng thêm từng item PPE, behavior, association theo `tracks.csv`; CROWD gán nhãn không gt_id; `label_intervals thumbs` (ảnh track để điền gt_id); cache observe (toàn chuỗi chạy thử 100 s, cùng kết quả); snapshot có overlay cho alert live
-- 168 test pass, ruff sạch (pytest cần `--basetemp` ghi được trên máy này)
+- **(s13) Sẵn sàng cho C2:** `eval/run_c2.py` (check → calib p/v_learned trên val → tune từng phương pháp trên val → B0–B4 + B0/B1 mỗi cam + P + ablation trên test → sensitivity → số cam 1/2/3 → `REPORT.md`), bảng thêm từng item PPE, behavior, association theo `tracks.csv`; CROWD gán nhãn không gt_id; `label_intervals thumbs` (ảnh track để điền gt_id); cache observe (toàn chuỗi chạy thử 100 s, cùng kết quả); snapshot có overlay cho alert live (đã chạy với DS thật: 28/28); tune tự nới lưới ở biên
+- 170 test pass, ruff sạch (pytest cần `--basetemp` ghi được trên máy này)
 
 ## Đang dở
 - Không có (s13 đã commit)
@@ -31,7 +31,7 @@
 ## Ưu tiên tiếp theo
 1. Có C2: README bước 2–4 (`session_check` → `calibrate_homography` → `ultralytics_runner` → `label_intervals template/thumbs/convert/validate`), sửa `configs/c2_split.yaml`, rồi `python -m eval.run_c2 --steps check` và `python -m eval.run_c2 --jobs 4` → `eval/reports/c2/REPORT.md`
 2. Nếu tune báo biên lưới thì mở rộng `eval/tune_c2.SPACE`; tune thêm d_max / d_max_truncated / ROI nếu association hoặc gán PPE kém trên val
-3. Đo độ trễ alert / FPS live ở 25–30 fps (C2); thử snapshot live với DS thật
+3. Đo độ trễ alert / FPS live ở 25–30 fps (C2)
 
 ## Session gần nhất
 - [2026-10-29_s13.md](2026-10-29_s13.md) (trước đó: s12, s05–s11)

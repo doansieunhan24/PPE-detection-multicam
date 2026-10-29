@@ -144,3 +144,23 @@ def test_obs_cache_gives_identical_output(tmp_path):
     run(sess, tmp_path / "c3", cfg, "P", {}, fusion_overrides={"rois.head_expand": 2.0},
         obs_cache=cache)  # fmt: skip
     assert len(list(cache.glob("*.pkl"))) == 2  # an observation parameter does
+
+
+def test_extend_value():
+    ev = tune_c2.extend_value
+    assert ev("evidence.theta_obs", 0.25, at_min=True) == 0.125
+    assert ev("evidence.tau_s", 4.0, at_min=False) == 8.0
+    assert ev("evidence.theta_neg", -2.0, at_min=True) == -4.0  # more negative
+    assert ev("evidence.theta_neg", -0.25, at_min=False) == -0.125  # closer to 0
+    assert ev("baselines.pos_thr", 0.6, at_min=False) == 0.95  # clipped to BOUNDS
+    assert ev("baselines.pos_thr", 0.95, at_min=False) is None
+
+
+def test_tune_extends_grid_at_edge(tmp_path):
+    cfg, sess, gt = _setup(tmp_path)
+    # helmet removed at 10 s: every T_alert in the grid alarms → tie, kept near the default (3);
+    # force an edge: only the two largest values exist, the smaller one wins (earlier, same F1)
+    space = {"P": {"alert.T_alert_s": [6.0, 8.0]}}
+    res = tune_c2.tune([str(sess)], str(gt), tmp_path / "t", str(cfg), ["P"], space=space)
+    grid = res["grids"]["P"]["alert.T_alert_s"]
+    assert grid[:2] == [6.0, 8.0] and len(grid) > 2  # extended beyond an edge

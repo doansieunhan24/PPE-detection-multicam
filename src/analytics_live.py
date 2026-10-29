@@ -158,6 +158,7 @@ def run_live(
     save_states: bool = False,
     max_groups: int | None = None,
     snapshots: SnapshotMaker | None = None,
+    duration_s: float | None = None,
 ) -> dict:
     live_cfg = an.alerts_cfg.get("live", {})
     sr_cfg = an.alerts_cfg.get("smart_record", {})
@@ -178,6 +179,7 @@ def run_live(
     n_frames = n_groups = n_alerts = 0
     latest: dict[int, dict] = {}
     t_snap = 0
+    t_start = now_ms()
     fa = open(out_dir / "alerts.jsonl", "a", encoding="utf-8")
     fs = open(out_dir / "states.jsonl", "a", encoding="utf-8") if save_states else None
 
@@ -240,6 +242,9 @@ def run_live(
                 t_snap = t
             if max_groups is not None and n_groups >= max_groups:
                 break
+            if duration_s is not None and t - t_start >= duration_s * 1000:
+                log.info("duration %.0f s reached", duration_s)
+                break
         else:  # source exhausted (replay): what is still buffered
             for group in syncer.pop_ready(now_ms(), flush=True):
                 process(group)
@@ -289,6 +294,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--no-db", action="store_true", help="do not write the SQLite alert store")
     ap.add_argument("--save-states", action="store_true", help="also append states.jsonl")
     ap.add_argument("--no-snapshot", action="store_true", help="no snapshot from the clips")
+    ap.add_argument("--duration-s", type=float, help="stop after this long (then finish snapshots)")
     args = ap.parse_args(argv)
     setup_logging()
 
@@ -313,6 +319,7 @@ def main(argv: list[str] | None = None) -> None:
             trigger=trigger,
             save_states=args.save_states,
             snapshots=snapshots,
+            duration_s=args.duration_s,
         )
     finally:
         if trigger is not None:
