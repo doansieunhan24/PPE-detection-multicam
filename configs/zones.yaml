@@ -2,6 +2,10 @@
 # type: forbidden | risk | ppe_required
 
 association:
+  # ground_plane: match people across cameras on the floor map (§7.2, multi-view fusion)
+  # none: no cross-camera matching, each (cam, track_id) is its own person (user decision
+  # 2026-10-31); fusion is then temporal within one camera, crowd counts may double-count
+  mode: none
   d_max_m: 0.8
   vote_window_frames: 15
   # Tolerance around each camera's fov_floor_polygon_m when gating a pair match: people cut by

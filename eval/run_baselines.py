@@ -6,6 +6,12 @@
     python -m eval.run_baselines ... --single-cam-all   # B0/B1 on every camera, not only primary
     python -m eval.run_baselines ... --tuned eval/reports/c2/tune/tuned.json   # val-tuned params
     python -m eval.run_baselines ... --cams cam1 cam2   # camera subset (§10.3-3)
+    python -m eval.run_baselines ... --per-cam yes   # score every camera as its own system
+
+Per camera (default when zones.yaml association.mode = none, i.e. no cross-camera matching):
+each (session, camera) runs alone and is scored against the full GT, then units are pooled;
+FA/hour is per camera-hour. Multi-camera rules (B2, B3) and B0/B1@cam are dropped, B0/B1 run
+on the unit's camera. INTRUSION is scored only on calibrated cameras.
 
 Each session dir holds <cam_id>.jsonl; GT lives in <gt>/<session_name>/{tracks,intervals}.csv.
 Writes per-run analytics outputs and <out>/results.{json,md}: the PPE table (all PPE types
@@ -48,6 +54,32 @@ ABLATIONS = {
     "P-v_learned": {"v_learned": True},
 }
 SINGLE_CAM = ("B0", "B1")
+MULTI_CAM = ("B2", "B3")  # rules over several cameras; same as B1 on a single camera
+
+
+def per_camera_default(config_dir: Path) -> bool:
+    """Score per camera when the system does not match people across cameras."""
+    assoc = load_config("zones", config_dir).get("association", {})
+    return assoc.get("mode", "ground_plane") == "none"
+
+
+def eval_units(
+    sessions: list[Path], per_cam: bool, cams: list[str] | None = None
+) -> list[tuple[Path, list[str] | None, str]]:
+    """(session, cameras to run, tag): one unit per session, or per (session, camera)."""
+    if not per_cam:
+        return [(s, cams, s.name) for s in sessions]
+    return [
+        (s, [c], f"{s.name}/{c}")
+        for s in sessions
+        for c in sorted(p.stem for p in s.glob("*.jsonl"))
+        if cams is None or c in cams
+    ]
+
+
+def unit_overrides(unit_cams: list[str] | None, per_cam: bool) -> dict:
+    """Single-camera baselines read baselines.primary_cam: point it at the unit's camera."""
+    return {"baselines.primary_cam": unit_cams[0]} if per_cam and unit_cams else {}
 
 
 def _read_jsonl(path: Path, model):
@@ -97,6 +129,9 @@ def evaluate(run_dir: Path, gt_dir: Path, delta_ms: int, association: bool = Fal
         }
         for t in PPE_TYPES + BEHAVIOR_TYPES
     }
+    if not set(summary.get("calibrated_cams", [])) & set(summary.get("cams", [])):
+        # no floor map → intrusion cannot fire; leave these cameras out of the INTRUSION row
+        per_type["INTRUSION"] = {**_prf(0, 0, 0, dur), "n_gt": 0, "mean_ttd_s": None}
     unk = unknown_fraction(ps.state for s in states for ps in s.parts.values())
     out = {**m.as_dict(), "unknown_frac": unk, "duration_s": dur, "per_type": per_type}
     if association:
@@ -168,13 +203,15 @@ def session_cams(sessions: list[Path]) -> list[str]:
 
 
 def build_variants(
-    ablations: bool, config_dir: Path, single_cam_all: bool, cams: list[str]
+    ablations: bool, config_dir: Path, single_cam_all: bool, cams: list[str], per_cam: bool = False
 ) -> dict[str, tuple[str, dict, dict]]:
     """name → (policy, ablation, extra fusion overrides)."""
     variants: dict[str, tuple[str, dict, dict]] = {
-        p: (p, {}, {}) for p in ("B0", "B1", "B2", "B3", "B4", "P")
+        p: (p, {}, {})
+        for p in ("B0", "B1", "B2", "B3", "B4", "P")
+        if not (per_cam and p in MULTI_CAM)
     }
-    if single_cam_all:
+    if single_cam_all and not per_cam:
         primary = load_config("fusion", config_dir)["baselines"]["primary_cam"]
         for b in SINGLE_CAM:
             for cam in cams:
@@ -205,6 +242,13 @@ def render_md(meta: dict, results: dict[str, dict]) -> list[str]:
         f"Sessions: {', '.join(Path(s).name for s in meta['sessions'])}"
         + (f" · cams: {', '.join(meta['cams'])}" if meta.get("cams") else ""),
         "",
+    ]
+    if meta.get("per_cam"):
+        lines += [
+            "Per camera: each camera scored as its own system, pooled; FA/hour per camera-hour.",
+            "",
+        ]
+    lines += [
         "| Method | Precision | Recall | F1 | FA/hour | %UNKNOWN | TTD (s) |",
         "|---|---|---|---|---|---|---|",
     ]
@@ -222,6 +266,19 @@ def render_md(meta: dict, results: dict[str, dict]) -> list[str]:
                 f"{r['per_type'][t]['f1']:.3f} / {r['per_type'][t]['fa_per_hour']:.2f} "
                 f"({r['per_type'][t]['n_gt']})"
                 for t in PPE_TYPES
+            ]
+            lines.append(f"| {k} | " + " | ".join(cells) + " |")
+    by_cam = [k for k, r in results.items() if "by_cam" in r]
+    if by_cam:
+        cams = list(results[by_cam[0]]["by_cam"])
+        lines += ["", "Per camera (F1 / FA/hour / %UNKNOWN):", ""]
+        lines += ["| Method | " + " | ".join(cams) + " |", "|---" * (len(cams) + 1) + "|"]
+        for k in by_cam:
+            bc = results[k]["by_cam"]
+            cells = [
+                f"{bc[c]['f1']:.3f} / {bc[c]['fa_per_hour']:.2f} / "
+                f"{100 * bc[c]['unknown_frac']:.1f}"
+                for c in cams
             ]
             lines.append(f"| {k} | " + " | ".join(cells) + " |")
     p = results.get("P")
@@ -264,11 +321,14 @@ def run_all(
     tuned: dict | None = None,
     cams: list[str] | None = None,
     obs_cache: Path | None = None,
+    per_cam: bool | None = None,
 ) -> dict[str, dict]:
     tuned = tuned or {}
+    per_cam = per_camera_default(config_dir) if per_cam is None else per_cam
     avail = session_cams(sessions)
-    variants = build_variants(ablations, config_dir, single_cam_all, cams or avail)
-    if cams:
+    variants = build_variants(ablations, config_dir, single_cam_all, cams or avail, per_cam)
+    units = eval_units(sessions, per_cam, cams)
+    if cams and not per_cam:
         primary = load_config("fusion", config_dir)["baselines"]["primary_cam"]
         if primary not in cams:  # single-cam baselines must run on a camera of the subset
             for name, (pol, abl, ov) in list(variants.items()):
@@ -277,19 +337,26 @@ def run_all(
     results: dict[str, dict] = {}
     for name, (policy, abl, extra) in variants.items():
         ov = {**overrides_for(name, policy, tuned), **extra}
-        rows = []
-        for s in sessions:
-            run_dir = out / "runs" / s.name / name
-            run(s, run_dir, config_dir, policy, abl, fusion_overrides=ov, cams=cams,
+        rows, by_cam = [], {}
+        for s, ucams, tag in units:
+            run_dir = out / "runs" / tag / name
+            run(s, run_dir, config_dir, policy, abl,
+                fusion_overrides={**ov, **unit_overrides(ucams, per_cam)}, cams=ucams,
                 obs_cache=obs_cache)  # fmt: skip
-            rows.append(evaluate(run_dir, gt / s.name, delta_ms, association=name == "P"))
+            r = evaluate(run_dir, gt / s.name, delta_ms, association=name == "P" and not per_cam)
+            rows.append(r)
+            if per_cam:
+                by_cam.setdefault(ucams[0], []).append(r)
         results[name] = _pool(rows)
         results[name]["overrides"] = ov
+        if per_cam:
+            results[name]["by_cam"] = {c: _pool(rs) for c, rs in sorted(by_cam.items())}
 
     meta = {
         "commit": git_commit(),
         "sessions": [str(s) for s in sessions],
         "cams": cams or avail,
+        "per_cam": per_cam,
         "delta_ms": delta_ms,
         "tuned": tuned,
     }
@@ -317,6 +384,12 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--tuned", help="JSON of val-tuned fusion overrides (eval/tune_c2.py)")
     ap.add_argument("--cams", nargs="+", help="camera subset (default: all)")
     ap.add_argument("--obs-cache", help="dir caching policy-independent work (faster reruns)")
+    ap.add_argument(
+        "--per-cam",
+        choices=["auto", "yes", "no"],
+        default="auto",
+        help="score each camera alone (auto: when association.mode is none)",
+    )
     args = ap.parse_args(argv)
     setup_logging()
     tuned = json.loads(Path(args.tuned).read_text(encoding="utf-8")) if args.tuned else {}
@@ -331,6 +404,7 @@ def main(argv: list[str] | None = None) -> None:
         tuned.get("overrides", tuned),
         args.cams,
         Path(args.obs_cache) if args.obs_cache else None,
+        None if args.per_cam == "auto" else args.per_cam == "yes",
     )
 
 

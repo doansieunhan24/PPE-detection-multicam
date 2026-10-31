@@ -27,7 +27,14 @@ import json
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-from eval.run_baselines import _pool, evaluate
+from eval.run_baselines import (
+    MULTI_CAM,
+    _pool,
+    eval_units,
+    evaluate,
+    per_camera_default,
+    unit_overrides,
+)
 from src.analytics_runner import git_commit, run
 from src.common.config import DEFAULT_CONFIG_DIR, apply_overrides, load_config
 from src.common.logging import get_logger, setup_logging
@@ -93,13 +100,14 @@ def at_edge(searched: dict[str, dict], space: dict[str, dict[str, list[float]]] 
 
 
 def _eval(job: tuple) -> tuple[str, dict, dict]:
-    policy, ov, fixed, sessions, gt, out, config, delta_ms, obs_cache = job
+    policy, ov, fixed, sessions, gt, out, config, delta_ms, obs_cache, per_cam = job
     tag = ",".join(f"{k}={v:g}" for k, v in sorted(ov.items()))
     rows = []
-    for s in map(Path, sessions):
-        d = Path(out) / "runs" / s.name / policy / tag
+    for s, ucams, utag in eval_units([Path(x) for x in sessions], per_cam):
+        d = Path(out) / "runs" / utag / policy / tag
         if not (d / "run.json").exists():  # resume an interrupted search
-            run(s, d, Path(config), policy, {}, fusion_overrides={**fixed, **ov},
+            run(s, d, Path(config), policy, {},
+                fusion_overrides={**fixed, **ov, **unit_overrides(ucams, per_cam)}, cams=ucams,
                 obs_cache=obs_cache)  # fmt: skip
         rows.append(evaluate(d, Path(gt) / s.name, delta_ms))
     r = _pool(rows)
@@ -122,8 +130,14 @@ def tune(
     base: dict[str, dict] | None = None,
     obs_cache: Path | None = None,
     max_extend: int = 3,
+    per_cam: bool | None = None,
 ) -> dict:
-    """base: fixed overrides per policy ("*" = all), e.g. a C2-fitted p calibration for P."""
+    """base: fixed overrides per policy ("*" = all), e.g. a C2-fitted p calibration for P.
+    per_cam: score each camera alone (None: when association.mode is none); B2/B3 skipped."""
+    if per_cam is None:
+        per_cam = per_camera_default(Path(config))
+    if per_cam:
+        policies = [p for p in policies if p not in MULTI_CAM]
     space = {p: {k: list(v) for k, v in d.items()} for p, d in (space or SPACE).items()}
     base = base or {}
     n_ext: dict[tuple[str, str], int] = {}
@@ -141,7 +155,7 @@ def tune(
         todo = [(p, ov) for p, ov in cands if (p, tuple(sorted(ov.items()))) not in cache]
         jl = [
             (p, ov, {**base.get("*", {}), **base.get(p, {})}, sessions, gt, str(out), config,
-             delta_ms, obs_cache)
+             delta_ms, obs_cache, per_cam)
             for p, ov in todo
         ]  # fmt: skip
         if jobs > 1 and len(jl) > 1:

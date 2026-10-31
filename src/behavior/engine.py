@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 import uuid
-from collections import deque
+from collections import Counter, deque
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
@@ -57,6 +57,9 @@ class BehaviorEngine:
             ZoneDef(z["id"], z["type"], [tuple(p) for p in z["polygon_m"]], z.get("crowd_max"))
             for z in zones_cfg.get("zones", [])
         ]
+        # without cross-camera matching a person seen by k cameras has k global_ids
+        assoc_mode = zones_cfg.get("association", {}).get("mode", "ground_plane")
+        self.cross_cam_ids = assoc_mode != "none"
         cd = int(cfg.get("cooldown_s", 60) * 1000)
         self.fall_alerter = EpisodeAlerter(int(cfg["fall"]["hold_s"] * 1000), cd)
         self.immobile_alerter = EpisodeAlerter(int(cfg["immobility"]["T_immobile_s"] * 1000), cd)
@@ -212,7 +215,12 @@ class BehaviorEngine:
         for z in self.zones:
             if z.type not in c["zone_types"]:
                 continue
-            n = sum(1 for g in per_gid if z.contains(floor_of.get(g)))
+            inside = [g for g in per_gid if z.contains(floor_of.get(g))]
+            if self.cross_cam_ids:
+                n = len(inside)
+            else:  # count in each camera, take the camera that sees the most (no double count)
+                per_cam = Counter(c for g in inside for c in {v[0] for v in per_gid[g]})
+                n = max(per_cam.values(), default=0)
             k = z.crowd_max if z.crowd_max is not None else c["K"]
             start = self.crowd_alerter.update(z.id, n > k, ts_ms)
             if start is not None:

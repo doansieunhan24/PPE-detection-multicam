@@ -19,7 +19,15 @@ import json
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-from eval.run_baselines import _pool, evaluate, overrides_for
+from eval.run_baselines import (
+    MULTI_CAM,
+    _pool,
+    eval_units,
+    evaluate,
+    overrides_for,
+    per_camera_default,
+    unit_overrides,
+)
 from src.analytics_runner import git_commit, run
 from src.common.config import DEFAULT_CONFIG_DIR, apply_overrides, load_config
 from src.common.logging import get_logger, setup_logging
@@ -39,11 +47,12 @@ COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]
 
 
 def _one(job: tuple) -> tuple[str, float, str, dict]:
-    key, value, policy, sessions, gt, out, config, delta_ms, base, obs_cache = job
+    key, value, policy, sessions, gt, out, config, delta_ms, base, obs_cache, per_cam = job
     rows = []
-    for s in map(Path, sessions):
-        run_dir = Path(out) / "runs" / s.name / f"{key}={value}" / policy
-        run(s, run_dir, Path(config), policy, {}, fusion_overrides={**base, key: value},
+    for s, ucams, tag in eval_units([Path(x) for x in sessions], per_cam):
+        run_dir = Path(out) / "runs" / tag / f"{key}={value}" / policy
+        run(s, run_dir, Path(config), policy, {},
+            fusion_overrides={**base, key: value, **unit_overrides(ucams, per_cam)}, cams=ucams,
             obs_cache=obs_cache)  # fmt: skip
         rows.append(evaluate(run_dir, Path(gt) / s.name, delta_ms))
     return key, value, policy, _pool(rows)
@@ -114,8 +123,19 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--jobs", type=int, default=1)
     ap.add_argument("--tuned", help="sweep around these values (eval/tune_c2.py tuned.json)")
     ap.add_argument("--obs-cache", help="dir caching policy-independent work (faster reruns)")
+    ap.add_argument(
+        "--per-cam",
+        choices=["auto", "yes", "no"],
+        default="auto",
+        help="score each camera alone (auto: when association.mode is none)",
+    )
     args = ap.parse_args(argv)
     setup_logging()
+    per_cam = (
+        per_camera_default(Path(args.config)) if args.per_cam == "auto" else args.per_cam == "yes"
+    )
+    if per_cam:
+        args.policies = [p for p in args.policies if p not in MULTI_CAM]
 
     sweeps = {p[0]: [float(v) for v in p[1:]] for p in args.param} if args.param else DEFAULT_SWEEPS
     tuned = json.loads(Path(args.tuned).read_text(encoding="utf-8")) if args.tuned else {}
@@ -146,6 +166,7 @@ def main(argv: list[str] | None = None) -> None:
             args.delta_ms,
             base[pol],
             Path(args.obs_cache) if args.obs_cache else None,
+            per_cam,
         )  # fmt: skip
         for key, values in sweeps.items()
         for pol in args.policies

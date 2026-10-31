@@ -164,3 +164,30 @@ def test_tune_extends_grid_at_edge(tmp_path):
     res = tune_c2.tune([str(sess)], str(gt), tmp_path / "t", str(cfg), ["P"], space=space)
     grid = res["grids"]["P"]["alert.T_alert_s"]
     assert grid[:2] == [6.0, 8.0] and len(grid) > 2  # extended beyond an edge
+
+
+def test_per_camera_scoring(tmp_path):
+    import yaml
+
+    cfg, sess, gt = _setup(tmp_path)
+    zones = yaml.safe_load((cfg / "zones.yaml").read_text(encoding="utf-8"))
+    zones["association"]["mode"] = "none"
+    (cfg / "zones.yaml").write_text(yaml.safe_dump(zones), encoding="utf-8")
+    assert run_baselines.per_camera_default(cfg)
+
+    out = tmp_path / "per_cam"
+    res = run_baselines.run_all([sess], gt, out, cfg, single_cam_all=True)
+    assert "B2" not in res and "B3" not in res and not any("@" in k for k in res)
+    # cam1 only sees the back: P stays UNKNOWN, B1 calls "no helmet" a violation
+    assert res["P"]["by_cam"]["cam1"]["fp"] == 0 and res["B1"]["by_cam"]["cam1"]["fp"] >= 1
+    assert res["P"]["by_cam"]["cam2"]["tp"] == 1
+    assert res["P"]["n_gt"] == 2  # the GT interval counts once per camera
+    assert res["P"]["duration_s"] == sum(r["duration_s"] for r in res["P"]["by_cam"].values())
+    b1 = json.loads((out / "runs" / "s01" / "cam1" / "B1" / "run.json").read_text("utf-8"))
+    assert b1["cams"] == ["cam1"]
+    assert "association" not in res["P"]
+    assert "Per camera" in (out / "results.md").read_text(encoding="utf-8")
+
+    t = tune_c2.tune([str(sess)], str(gt), tmp_path / "tune", str(cfg), ["P", "B2"],
+                     rounds=1, space={"P": {"alert.T_alert_s": [1.0, 3.0]}})  # fmt: skip
+    assert set(t["searched"]) == {"P"}

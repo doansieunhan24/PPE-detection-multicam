@@ -29,9 +29,14 @@ class Associator:
     fov_margin_m: float = 0.0
     foot_point_source: str = "ankles"
     d_max_truncated_m: float | None = None
+    # ground_plane: cross-camera clusters (§7.2) | none: every (cam, track) is its own person
+    mode: str = "ground_plane"
     gids: GlobalIdManager = field(init=False)
+    _own_gid: dict[PersonKey, int] = field(init=False, default_factory=dict)
 
     def __post_init__(self) -> None:
+        if self.mode not in ("ground_plane", "none"):
+            raise ValueError(f"association.mode must be ground_plane or none, got {self.mode!r}")
         self.gids = GlobalIdManager(window=self.vote_window, reuse_dist_m=self.d_max_m)
 
     @classmethod
@@ -44,6 +49,7 @@ class Associator:
             a.get("fov_margin_m", 0.0),
             a.get("foot_point", "ankles"),
             a.get("d_max_truncated_m"),
+            a.get("mode", "ground_plane"),
         )
 
     def floor_xy(self, cam: str, p: PersonDet) -> tuple[float, float]:
@@ -55,6 +61,8 @@ class Associator:
         return float(x), float(y)
 
     def step(self, group: Mapping[str, PerceptionFrame], ts_ms: int) -> dict[PersonKey, int]:
+        if self.mode == "none":
+            return self._step_per_camera(group)
         located: dict[str, list[FloorObs]] = {}
         singles: list[list[FloorObs]] = []
         for cam, fr in group.items():
@@ -68,3 +76,13 @@ class Associator:
         sees = {c: partial(cal.sees, margin_m=self.fov_margin_m) for c, cal in self.calibs.items()}
         clusters = cluster(located, self.d_max_m, sees, self.d_max_truncated_m) if located else []
         return self.gids.update(clusters + singles, ts_ms)
+
+    def _step_per_camera(self, group: Mapping[str, PerceptionFrame]) -> dict[PersonKey, int]:
+        result: dict[PersonKey, int] = {}
+        for cam, fr in group.items():
+            for p in fr.persons:
+                key = (cam, p.track_id)
+                if key not in self._own_gid:
+                    self._own_gid[key] = len(self._own_gid) + 1
+                result[key] = self._own_gid[key]
+        return result

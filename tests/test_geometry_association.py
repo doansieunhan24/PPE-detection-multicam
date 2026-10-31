@@ -162,3 +162,26 @@ def test_floor_centre_prefers_reliable():
     assert floor_centre(obs).tolist() == [0.0, 0.0]
     cut = [FloorObs(("c1", 1), (0.0, 0.0), False), FloorObs(("c2", 1), (2.0, 0.0), False)]
     assert floor_centre(cut).tolist() == [1.0, 0.0]
+
+
+def test_associator_mode_none_keeps_cameras_apart():
+    from src.association.associator import Associator
+
+    def fr(cam, tids):
+        return PerceptionFrame(
+            cam_id=cam,
+            frame_idx=0,
+            ts_ms=0,
+            img_w=10,
+            img_h=10,
+            persons=[PersonDet(track_id=t, bbox=[0, 0, 1, 1], conf=0.9) for t in tids],
+        )
+
+    a = Associator({}, mode="none")
+    g1 = a.step({"cam1": fr("cam1", [1, 2]), "cam2": fr("cam2", [1])}, 0)
+    assert len(set(g1.values())) == 3
+    g2 = a.step({"cam1": fr("cam1", [2]), "cam2": fr("cam2", [1, 5])}, 40)
+    assert g2[("cam1", 2)] == g1[("cam1", 2)] and g2[("cam2", 1)] == g1[("cam2", 1)]
+    assert g2[("cam2", 5)] not in g1.values()
+    with pytest.raises(ValueError):
+        Associator({}, mode="reid")

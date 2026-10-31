@@ -528,6 +528,8 @@ pytest -q && ruff check src eval tools
 | 2026-10-29 | `PPEEngine.step = decide(observe())`; eval cache phần observe (`run(obs_cache=)`) | Observe không phụ thuộc policy và mục `evidence/alert/baselines`; test chứng minh cùng output; toàn chuỗi C2 chạy thử 100 s |
 | 2026-10-29 | Snapshot alert live lấy từ clip smart record + overlay vẽ từ metadata (`src/alerts/snapshot.py`) | Clip smart record không có OSD; offset chính xác khoảng 1 GOP |
 | 2026-10-29 | **Không thêm cờ loại cam nhìn từ trên xuống** cho fuse fall; giữ `fall.fusion: vmean` (người dùng xác nhận) | Hệ thống và C2 không có cam nhìn từ trên xuống (cam đặt thấp, nhìn ngang/chéo). Vấn đề chỉ gặp ở UR Fall cam1 (trần); ghi vào Limitations |
+| 2026-10-31 | **Bỏ ghép người giữa các camera** (người dùng quyết định): `association.mode: none` trong `configs/zones.yaml`, mỗi `(cam, track_id)` là một người riêng. Code ground-plane (D3) giữ lại, bật bằng `mode: ground_plane` | Không fuse đa cam theo người nữa: fusion C1 chỉ còn theo thời gian trong từng cam; B2–B4, thí nghiệm 1/2/3 cam, đếm CROWD và fuse fall đa cam cần xem lại. `eval_association` vẫn đo phương pháp ground-plane |
+| 2026-10-31 | Khi `association.mode: none`: **eval chấm từng camera riêng** (`run_baselines`/`tune_c2`/`run_sensitivity --per-cam auto`, bỏ B2/B3 và thí nghiệm số cam); **CROWD đếm theo cam thấy nhiều người nhất** trong zone thay vì cộng mọi `global_id` | Không ghép người thì mỗi cam là một hệ thống độc lập; cộng `global_id` giữa các cam đếm trùng một người k lần |
 | — | Số cam / loại cam / có Jetson Orin không: `TODO` | |
 
 ---

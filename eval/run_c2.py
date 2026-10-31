@@ -17,6 +17,11 @@ Steps (each writes <out>/<step>/ and can be rerun alone; later steps read earlie
   report   <out>/REPORT.md gathering every table, with commit and split
 
 --no-refit skips calib (base = config files fitted on SH17/CHV).
+
+Per camera (zones.yaml association.mode = none, the default since 2026-10-31): tune, main and
+sens score every (session, camera) as its own system and pool them (FA/hour per camera-hour);
+B2/B3 are dropped, numcams is skipped and the main table gets a per-camera breakdown instead.
+Cameras without homography are allowed (they only miss the INTRUSION rows).
 """
 
 from __future__ import annotations
@@ -33,6 +38,7 @@ from src.common.config import DEFAULT_CONFIG_DIR, load_config
 from src.common.logging import get_logger, setup_logging
 
 log = get_logger(__name__)
+SCORING = {True: "per camera (each camera alone, pooled)", False: "per person across cameras"}
 STEPS = ["check", "calib", "tune", "main", "sens", "numcams", "report"]
 
 
@@ -58,11 +64,12 @@ def check(split: dict, config_dir: Path) -> list[str]:
         errs.append("split: val and test must both be non-empty")
     if names_v & names_t:
         errs.append(f"split: sessions in both val and test: {sorted(names_v & names_t)}")
+    per_cam = run_baselines.per_camera_default(config_dir)
     cams_ref = None
     for s in split["val"] + split["test"]:
         jl = sorted(p.stem for p in s.glob("*.jsonl"))
-        if len(jl) < 2:
-            errs.append(f"{s}: {len(jl)} camera JSONL (need ≥ 2)")
+        if len(jl) < (1 if per_cam else 2):
+            errs.append(f"{s}: {len(jl)} camera JSONL (need ≥ {1 if per_cam else 2})")
             continue
         if cams_ref is not None and jl != cams_ref:
             log.warning("%s: cameras %s differ from %s", s, jl, cams_ref)
@@ -82,7 +89,10 @@ def check(split: dict, config_dir: Path) -> list[str]:
         cams_cfg = load_config("cameras", config_dir, override_dir=s)
         calibs = load_calibs(cams_cfg, config_dir.parent)
         missing = [c for c in jl if c not in calibs or not calibs[c].calibrated]
-        if missing:
+        if missing and per_cam and len(missing) < len(jl):
+            # homography only serves the forbidden zone; these cams are left out of INTRUSION
+            log.warning("%s: no homography for %s (not scored for INTRUSION)", s, missing)
+        elif missing:
             errs.append(f"{s}: no homography for {missing} (tools/calibrate_homography.py)")
     return errs
 
@@ -119,7 +129,7 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else f"_(missing: {path})_\n"
 
 
-def report(out: Path, split: dict) -> Path:
+def report(out: Path, split: dict, per_cam: bool = False) -> Path:
     tuned = out / "tune" / "tuned.json"
     base = out / "base.json"
     base_txt = base.read_text(encoding="utf-8").strip() if base.exists() else "none (SH17/CHV fit)"
@@ -130,6 +140,7 @@ def report(out: Path, split: dict) -> Path:
         f"- val (tuning, calibration): {', '.join(s.name for s in split['val'])}",
         f"- test (reported): {', '.join(s.name for s in split['test'])}",
         f"- base overrides: `{' '.join(base_txt.split())}`",
+        f"- scoring: {SCORING[per_cam]}",
         "",
         "## 1. Main table — test, tuned on val (§10.3-1, -2)",
         "",
@@ -140,11 +151,24 @@ def report(out: Path, split: dict) -> Path:
         "## 3. Tuned values (val)",
         "",
         _read(out / "tune" / "tuned.md"),
-        "## 4. Number of cameras — test (§10.3-3)",
-        "",
-        _read(out / "numcams" / "results.md"),
-        "![num cams](numcams/num_cams.png)",
-        "",
+    ]
+    if per_cam:
+        lines += [
+            "## 4. Number of cameras",
+            "",
+            "Not run: each camera is scored alone (association.mode = none); "
+            "see the per-camera table in section 1.",
+            "",
+        ]
+    else:
+        lines += [
+            "## 4. Number of cameras — test (§10.3-3)",
+            "",
+            _read(out / "numcams" / "results.md"),
+            "![num cams](numcams/num_cams.png)",
+            "",
+        ]
+    lines += [
         "## 5. Sensitivity around the tuned point — test (§10.3-4)",
         "",
         _read(out / "sens" / "results.md"),
@@ -223,14 +247,16 @@ def main(argv: list[str] | None = None) -> None:
         if tuned_path.exists():
             argv_s += ["--tuned", str(tuned_path)]
         run_sensitivity.main(argv_s)
-    if "numcams" in steps:
+    if "numcams" in steps and run_baselines.per_camera_default(cfg):
+        log.info("numcams: skipped (per-camera evaluation; see the per-camera table in main)")
+    elif "numcams" in steps:
         argv_n = ["--sessions", *st, "--gt", str(gt), "--out", str(out / "numcams"),
                   "--config", str(cfg), "--obs-cache", str(cache)]  # fmt: skip
         if tuned_path.exists():
             argv_n += ["--tuned", str(tuned_path)]
         run_num_cams.main(argv_n)
     if "report" in steps:
-        log.info("-> %s", report(out, split))
+        log.info("-> %s", report(out, split, run_baselines.per_camera_default(cfg)))
 
 
 def _write_tuned_md(res: dict, path: Path, sessions: list[str], objective: str) -> None:

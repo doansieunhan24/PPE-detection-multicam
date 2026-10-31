@@ -110,3 +110,22 @@ def test_intrusion_and_crowd():
     assert by_type[AlertType.INTRUSION].global_id == 1 and by_type[AlertType.INTRUSION].zone == "Z2"
     assert by_type[AlertType.CROWD].zone == "R1"
     assert sum(a.type is AlertType.INTRUSION for a in alerts) == 1
+
+
+@pytest.mark.parametrize("mode, expect_crowd", [("none", False), ("ground_plane", True)])
+def test_crowd_without_cross_camera_ids_counts_per_camera(mode, expect_crowd):
+    # 2 people in R1 (crowd_max 2 → no crowd), both seen by cam1 and cam2. Without
+    # cross-camera matching each view has its own global_id: 4 ids, but still 2 people.
+    zones = [
+        {"id": "R1", "type": "risk", "polygon_m": [[5, 5], [9, 5], [9, 9], [5, 9]], "crowd_max": 2}
+    ]
+    eng = BehaviorEngine(load_config("behavior"), {"zones": zones, "association": {"mode": mode}})
+    persons = [_p(i, _upright(x=100.0 * i)) for i in (1, 2)]
+    gid_of = {("cam1", 1): 1, ("cam1", 2): 2, ("cam2", 1): 3, ("cam2", 2): 4}
+    floor = {1: (6.0, 6.0), 2: (7.0, 7.0), 3: (6.1, 6.0), 4: (7.1, 7.0)}
+    alerts = []
+    for ts in range(0, 7000, 40):
+        group = {"cam1": _frame(ts, persons), "cam2": _frame(ts, persons)}
+        alerts += eng.step(group, ts, gid_of, floor)
+    # ground_plane treats the 4 ids as 4 people (association failed) → crowd
+    assert any(a.type is AlertType.CROWD for a in alerts) is expect_crowd
