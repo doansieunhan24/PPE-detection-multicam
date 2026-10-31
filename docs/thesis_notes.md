@@ -2,6 +2,8 @@
 
 ## Ý tưởng / lập luận
 
+- **(2026-10-31) Đổi hướng: chỉ xử lý từng camera.** Không ghép người giữa các camera; C1 = tích lũy theo thời gian có trọng số `v` + UNKNOWN trên từng camera, baseline B0/B1/B4. Các ghi chú "đa góc" bên dưới (fall MCFD, fit v trên nhiều góc) là thí nghiệm trước khi đổi hướng; khi viết thì C2 chỉ là video theo thời gian (cùng người, visibility thay đổi qua các frame), không phải đa góc đồng thời.
+
 ## Hình & bảng cần có
 
 ## Limitations bổ sung (ngoài CLAUDE.md §17)

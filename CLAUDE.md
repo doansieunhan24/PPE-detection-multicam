@@ -45,23 +45,23 @@ Tiến độ được lưu trong thư mục `process/` (xem `process/README.md`)
 
 ## 2. Contribution (KHÔNG thay đổi định nghĩa nếu chưa hỏi người dùng)
 
-### C1 — Visibility-Aware Multi-View PPE Evidence Fusion (đóng góp chính)
+### C1 — Visibility-Aware Temporal PPE Evidence Fusion, từng camera (đóng góp chính)
 
 **Vấn đề:** Hệ thống PPE truyền thống làm theo luật *"không detect được mũ ⇒ không đội mũ"*. Nhưng thường là do **camera không nhìn thấy** đầu: bị che, quay lưng, ở quá xa, bị mờ. Đây là nguồn **false alarm** lớn nhất khi triển khai thật.
 
-**Đề xuất:**
-- Mỗi camera, với mỗi người và mỗi bộ phận (head / torso / feet), xuất 2 giá trị:
+**Đề xuất** (từ 2026-10-31: **chỉ xử lý trong từng camera**, không ghép người giữa các camera; người dùng quyết định, bài tập trung vào detection):
+- Mỗi camera, với mỗi người (track) và mỗi bộ phận (head / torso / feet), mỗi frame xuất 2 giá trị:
   - `p` = xác suất có PPE trên bộ phận đó
-  - `v` = **độ quan sát được** (visibility) của bộ phận đó trong camera đó
-- Fuse bằng chứng giữa các camera có trọng số `v`, tích lũy theo thời gian.
+  - `v` = **độ quan sát được** (visibility) của bộ phận đó trong frame đó
+- Tích lũy bằng chứng **theo thời gian** trên track, trọng số `v`: frame bị che, quay lưng, mờ, người nhỏ đóng góp ít.
 - Trạng thái có **3 mức**: `COMPLIANT` / `VIOLATION` / **`UNKNOWN`**. Nếu chưa đủ bằng chứng quan sát thì trả về `UNKNOWN` và **không báo động**.
 - Gán PPE vào bộ phận bằng pose: mũ phải nằm ở vùng đầu. Mũ cầm trên tay (gần cổ tay) ⇒ **không** tính là đang đội.
 
 **Claim mục tiêu:** giảm X% false alarm/giờ so với baseline mà recall vi phạm không giảm đáng kể.
 
-### C2 — Bộ dữ liệu đánh giá PPE đa góc nhìn (tự thu)
+### C2 — Bộ dữ liệu video đánh giá PPE (tự thu)
 
-Các dataset PPE public (SH17, SHWD, CHV) đều là ảnh đơn góc nên không đánh giá được fusion đa camera. Bộ tự thu gồm 3 camera đồng bộ, có kịch bản che khuất, quay lưng, cầm mũ, té ngã giả. Nhãn là **khoảng thời gian trạng thái theo từng người** (interval labels).
+Các dataset PPE public (SH17, SHWD, CHV) đều là ảnh tĩnh nên không đánh giá được tích lũy theo thời gian, UNKNOWN và false alarm/giờ. Bộ tự thu là video từ các camera thật (2 × Tiandy), mỗi camera chấm như một hệ thống độc lập, kịch bản 11 take (`docs/c2_shooting_script.md`): che khuất, quay lưng, cầm mũ, đứng xa, hard negative, vùng cấm, té ngã giả, tụ tập. Nhãn là **khoảng thời gian trạng thái theo từng người** (interval labels).
 
 ### C3 — Hệ thống hoàn chỉnh real-time trên DeepStream (đóng góp kỹ thuật)
 
@@ -75,7 +75,7 @@ Gồm PPE, vùng cấm, té ngã/bất động, tụ tập và alert phân cấp
 |---|---|---|
 | D1 | **Giữ tracking trong từng camera** (`nvtracker`, NvDCF hoặc IOU) | Cần track ID để tích lũy theo thời gian, có 1 alert/người, chuỗi skeleton cho té ngã. Bỏ tracking = quay về detect từng frame. |
 | D2 | **KHÔNG dùng appearance Re-ID cross-cam** | Công nhân mặc đồng phục giống nhau làm Re-ID hỏng. Tốn thêm model + công train. |
-| D3 | Ghép người giữa các camera bằng **Ground-Plane Association** (homography → bản đồ mặt sàn) | Không cần train, tận dụng homography đã dùng cho vùng cấm. Giả định: mặt sàn phẳng, các cam nhìn chung vùng sàn. |
+| D3 | **Không ghép người giữa các camera** (từ 2026-10-31, `association.mode: none`): mỗi `(cam, track_id)` là một người. Homography chỉ dùng cho vùng cấm / vùng rủi ro. Code Ground-Plane Association (§7.2) giữ làm tuỳ chọn `mode: ground_plane`, không dùng trong bài | Bài tập trung vào detection; mỗi camera là một hệ thống độc lập (người dùng quyết định). |
 | D4 | **Metadata-first**: DeepStream chỉ làm perception rồi xuất metadata JSONL. Association, fusion, behavior, eval đều **chạy lại offline được** từ JSONL | Chạy ablation không cần chạy lại DeepStream. Kết quả tái lập được. |
 | D5 | Có **perception backend thay thế** bằng Ultralytics (Python thuần), xuất **cùng schema JSONL** | Dev/eval trên máy không có DeepStream. Eval trên dataset ảnh/video public. |
 | D6 | PGIE = **YOLO-pose** (person bbox + 17 keypoints COCO, 1 lần infer) | Bỏ được 1 model detect người riêng. |
@@ -101,7 +101,7 @@ Gồm PPE, vùng cấm, té ngã/bất động, tụ tập và alert phân cấp
       ▼
 ┌──────────────────────── Analytics (Python, offline-replayable) ──────────────┐
 │ geometry: foot point → homography → floor (x,y) mét                          │
-│ association: ground-plane matching giữa các cam → global_id                  │
+│ association: tắt (mode none) → global_id riêng cho mỗi (cam, track)         │
 │ parts: keypoints → part ROIs (head/torso/feet) → gán PPE box → p             │
 │ visibility: v cho từng (cam, person, part)                                   │
 │ fusion: visibility-weighted log-odds + temporal → COMPLIANT/VIOLATION/UNKNOWN│
@@ -238,7 +238,9 @@ ppe-multicam/
 - `H` (3×3) map ảnh → sàn (mét), tính bằng `cv2.findHomography` từ ≥ 4 cặp điểm (khuyến nghị 6–10 điểm, RANSAC). Lưu reprojection error vào YAML. **Báo cáo sai số này trong thuyết minh.**
 - Mỗi cam có `fov_floor_polygon`: vùng sàn mà cam nhìn thấy. Chỉ ghép cặp người khi điểm nằm trong vùng giao FOV.
 
-### 7.2 Ground-plane association (`association/`)
+### 7.2 Ground-plane association (`association/`) — KHÔNG dùng từ 2026-10-31
+
+> Mặc định `association.mode: none`. Phần dưới chỉ còn là tuỳ chọn `mode: ground_plane`.
 
 1. Gom các frame của N cam trong cửa sổ đồng bộ `|Δts| ≤ sync_tol_ms` (mặc định 50 ms).
 2. Với mỗi cặp cam (a, b): ma trận khoảng cách Euclid trên sàn → Hungarian, gating `d < d_max` (mặc định 0.8 m).
@@ -277,7 +279,7 @@ s_fallback = 1 hoặc fallback_penalty
 
 ### 7.5 Evidence fusion + state machine (`fusion/evidence.py`, `state_machine.py`)
 
-Với người `g`, part `k`, tại thời điểm `t`:
+Với người `g`, part `k`, tại thời điểm `t` (khi không ghép cam, mỗi người chỉ có một camera `c` nên tổng Σ_c chỉ có một số hạng):
 
 ```
 e_c   = v_c · logit(clip(p_c, 0.01, 0.99))          # bằng chứng từ cam c
@@ -302,22 +304,22 @@ else:                    state = state_{t−1}        # hysteresis
 
 | ID | Mô tả |
 |---|---|
-| B0 | Single-cam, per-frame: không detect được PPE thì vi phạm ngay (cách làm phổ biến) |
-| B1 | Single-cam + persistence: vi phạm liên tục ≥ T_alert mới báo |
-| B2 | Multi-cam OR: người được coi là tuân thủ nếu bất kỳ cam nào thấy PPE |
-| B3 | Multi-cam majority vote theo frame + persistence |
-| B4 | Multi-cam weighted bằng **detector conf** (không có v) + persistence |
+| B0 | Per-frame: không detect được PPE thì vi phạm ngay (cách làm phổ biến) |
+| B1 | Persistence: vi phạm liên tục ≥ T_alert mới báo |
+| B4 | Tích lũy theo thời gian có trọng số **detector conf** (không có v) + persistence |
 | **P** | **Proposed:** v-weighted log-odds + UNKNOWN + temporal |
+
+B2 (OR nhiều cam) và B3 (majority vote nhiều cam) chỉ có nghĩa khi ghép người giữa các camera; không dùng từ 2026-10-31 (code giữ lại).
 
 ### 7.7 Behavior (`behavior/`)
 
 - **Fall:**
   - Baseline rule: tỉ lệ khung hình w/h của bbox, góc thân (vector vai→hông so với phương thẳng đứng), vận tốc dọc của hông.
   - Learned: chuỗi skeleton 30–60 frame (chuẩn hoá theo bbox) → ST-GCN (hoặc 1D-CNN/LSTM nhẹ).
-  - **Multi-view:** fall score fuse theo `v` của toàn thân (cùng tinh thần C1). Báo L3 khi score fuse vượt ngưỡng.
+  - Mỗi camera tự quyết (không ghép cam). Phần fuse đa góc theo `v` (`fall.fusion`) chỉ còn chạy khi `association.mode: ground_plane`; số liệu MCFD đa cam (s07) là thí nghiệm trước khi đổi hướng.
 - **Immobility:** dịch chuyển keypoint trung bình < ε trong ≥ `T_immobile` **và** tư thế nằm/ngồi bệt **và** nằm trong vùng rủi ro, hoặc ngay sau một sự kiện fall. Phân biệt với người đứng yên làm việc bình thường.
 - **Intrusion:** `floor_xy` nằm trong polygon vùng cấm ≥ `T_intr` (mặc định 1 s). Dùng toạ độ sàn đã fuse, không dùng ROI ảnh, để không bị lệch phối cảnh.
-- **Crowd:** số `global_id` trong zone rủi ro > K trong ≥ T giây. Đếm theo global_id để không đếm trùng giữa các cam.
+- **Crowd:** số người trong zone rủi ro > K (mặc định K = 3, tức ≥ 4 người) trong ≥ T giây. Không ghép cam thì đếm trong từng camera và lấy camera thấy nhiều người nhất (không cộng các cam, tránh đếm trùng).
 
 ### 7.8 Alerts (`alerts/`)
 
@@ -356,7 +358,7 @@ else:                    state = state_{t−1}        # hysteresis
 | Train PPE detector | **SH17** (17 class: person, head, helmet, safety-vest, shoes, foot, gloves, ...) | Tạo **tập crop người** (`prepare_sh17_person_crops.py`) cho khớp với phân phối input của SGIE. Lưu ý: class "shoes" **không phân biệt giày bảo hộ với giày thường**, phải ghi rõ ở phần Limitations. |
 | Bổ sung helmet | SHWD, CHV | Merge class cẩn thận (map tên class). |
 | **Đã có (2026-10-21)** | SH17: 8,099 ảnh / 75,994 instance (khớp README), chỉ 927 helmet + 530 safety-vest. CHV: 1,330 ảnh, person/vest/4 màu mũ (3,887 person, 1,784 vest, 3,538 helmet), không nhãn head/shoes/foot → pseudo-label bằng model SH17 (chỉ train/val) | Chi tiết số crop/instance: `data/processed/*/stats.json`, `docs/experiments.md` |
-| Association (đa cam, public) | **WILDTRACK** (EPFL, 7 cam, 400 frame có nhãn @2 fps) | Chỉ để eval association. License TODO(verify). Tải từ mirror HF vì link EPFL bị reset |
+| Association (đa cam, public) | **WILDTRACK** (EPFL, 7 cam, 400 frame có nhãn @2 fps) | Chỉ để eval association; **không dùng nữa từ 2026-10-31** (không ghép cam). License TODO(verify) |
 | Fall (đơn góc) | Le2i, UR Fall, CAUCAFall | Train/eval module fall. |
 | Fall (đa góc) | Multiple Cameras Fall Dataset (Univ. Montréal, 8 cam) | Đánh giá fusion fall đa camera. Đã dùng (`tools/mcfd_prepare.py`): fps thật 30, GT theo TR 1350 + erratum 2025 |
 | **Đánh giá C1** | **Bộ tự thu (C2)** | Chỉ dùng để **eval** (hoặc chia theo session), **không train detector trên bộ này**. |
@@ -365,19 +367,10 @@ else:                    state = state_{t−1}        # hysteresis
 
 ### 9.1 Kế hoạch thu bộ tự thu (C2)
 
-- 3 camera (IP cam hoặc điện thoại chạy app RTSP), đặt 3 góc nhìn chung một vùng sàn khoảng 6×8 m. Đặt marker trên sàn để calibrate homography.
-- Đồng bộ: vỗ tay hoặc bật đèn flash ở đầu mỗi session, rồi chạy `tools/sync_offsets.py`.
-- **Kịch bản** (mỗi cái 30–90 s, lặp với 2–5 người):
-  1. Đủ PPE, đi lại bình thường
-  2. Không đội mũ
-  3. **Cầm mũ trên tay**
-  4. **Quay lưng hoặc bị che bởi vật cản** (đủ PPE), kịch bản quan trọng nhất cho C1
-  5. Đứng xa cam (người nhỏ)
-  6. Cởi áo phản quang giữa chừng
-  7. Đi vào vùng cấm
-  8. Té ngã giả (có đệm), nằm bất động
-  9. Tụ tập ≥ K người
-- **Nhãn:** interval `(person_gt_id, item, state, t_start, t_end)` qua `tools/label_intervals.py`. Kèm GT person ID cho mỗi `(cam, track)` để chấm association. Nếu có thể, thêm bbox keyframe trên CVAT để đo detector.
+- Camera thật: 2 × Tiandy TC-C131N (`configs/cameras_lan.yaml`). Các cam **không cần nhìn chung vùng sàn**; mỗi cam chấm riêng. Homography chỉ cần cho cam thấy vùng cấm / vùng rủi ro.
+- Đồng bộ (vỗ tay hoặc bật/tắt đèn đầu session, `tools/sync_offsets.py`) chỉ để gán nhãn một lần dùng cho mọi cam.
+- **Kịch bản:** 11 take T01–T11 trong `docs/c2_shooting_script.md` (kèm bảng nhãn). T04 (quay lưng / vật cản, đủ PPE) là take quan trọng nhất cho C1.
+- **Nhãn:** interval `(person_gt_id, item, state, t_start, t_end)` qua `tools/label_intervals.py`. Kèm GT person ID cho mỗi `(cam, track)` để nối alert với người. Nếu có thể, thêm bbox keyframe trên CVAT để đo detector.
 - Tổng mục tiêu: khoảng 15–30 phút mỗi cam.
 
 ---
@@ -389,7 +382,6 @@ else:                    state = state_{t−1}        # hysteresis
 | Mức | Metric |
 |---|---|
 | Detector | mAP50, mAP50-95 theo class (riêng helmet/vest/shoes), trên SH17 test |
-| Association | Tỷ lệ ghép đúng cross-cam (pairwise precision/recall), IDF1 global (nếu có GT) |
 | **PPE compliance (C1)** | Event P/R/F1, **False Alarms / giờ**, time-to-detect, **% thời gian UNKNOWN** (coverage) |
 | Behavior | Event P/R/F1 cho fall/immobility/intrusion/crowd, FA/giờ |
 | Hệ thống | FPS theo từng stream, số stream tối đa @ real-time, latency end-to-end, GPU util/mem |
@@ -399,12 +391,13 @@ else:                    state = state_{t−1}        # hysteresis
 - Alert dự đoán khớp với GT interval nếu cùng người (qua mapping global_id ↔ gt_id), cùng type, và `t_raise ∈ [t_start − δ, t_end + δ]` (δ mặc định 2 s).
 - Mỗi GT interval khớp tối đa 1 alert. Alert không khớp với GT nào là **false alarm**.
 - FA/giờ = số false alarm / tổng thời lượng video (giờ).
+- **Chấm từng camera** (khi `association.mode: none`, mặc định): mỗi (session, cam) chạy và chấm riêng như một hệ thống đơn cam rồi gộp; FA/giờ tính theo giờ-cam; GT interval tính một lần cho mỗi cam. Cam không có homography không được chấm INTRUSION.
 
 ### 10.3 Thí nghiệm bắt buộc
 
-1. B0–B4 vs P trên bộ tự thu, bảng chính của luận văn.
+1. B0, B1, B4 vs P trên bộ tự thu (chấm từng camera), bảng chính của luận văn, kèm bảng theo từng camera.
 2. Ablation của P: bỏ `v`, bỏ UNKNOWN, bỏ temporal, `v` thủ công vs `v_learned`, log-odds vs Dempster–Shafer.
-3. Số camera: 1 / 2 / 3 cam, FA/giờ và recall thay đổi thế nào.
+3. ~~Số camera 1 / 2 / 3~~: bỏ từ 2026-10-31 (không ghép cam).
 4. Độ nhạy tham số: θ_obs, τ, T_alert (vẽ đường cong FA/giờ vs recall).
 5. Detector: full-frame vs crop người (SGIE) vs (sau này) part classifier cho feet.
 6. Benchmark FPS/latency theo số stream (1, 2, 3, 4, ...).
@@ -531,6 +524,7 @@ pytest -q && ruff check src eval tools
 | 2026-10-31 | **Bỏ ghép người giữa các camera** (người dùng quyết định): `association.mode: none` trong `configs/zones.yaml`, mỗi `(cam, track_id)` là một người riêng. Code ground-plane (D3) giữ lại, bật bằng `mode: ground_plane` | Không fuse đa cam theo người nữa: fusion C1 chỉ còn theo thời gian trong từng cam; B2–B4, thí nghiệm 1/2/3 cam, đếm CROWD và fuse fall đa cam cần xem lại. `eval_association` vẫn đo phương pháp ground-plane |
 | 2026-10-31 | Khi `association.mode: none`: **eval chấm từng camera riêng** (`run_baselines`/`tune_c2`/`run_sensitivity --per-cam auto`, bỏ B2/B3 và thí nghiệm số cam); **CROWD đếm theo cam thấy nhiều người nhất** trong zone thay vì cộng mọi `global_id` | Không ghép người thì mỗi cam là một hệ thống độc lập; cộng `global_id` giữa các cam đếm trùng một người k lần |
 | 2026-10-31 | **Cam thật:** 2 × Tiandy TC-C131N (1080p H264 25 fps, RTSP `/1/1`, substream `/1/2`) qua Ethernet, `configs/cameras_lan.yaml`; tài khoản cam trong `.env` (`CAM_USER`/`CAM_PASS`), `uri` dùng `${VAR}` và `load_cameras` thế + URL-encode | Không commit mật khẩu; mật khẩu có `@` phải encode trong URL. IP link-local 169.254.x có thể đổi khi cam khởi động lại. Ống kính méo cong rõ: cần xử lý trước homography |
+| 2026-10-31 | **Bài chỉ xử lý từng camera** (người dùng quyết định, bài chủ yếu là detection): C1 = tích lũy theo thời gian có trọng số `v` + UNKNOWN trên từng camera; baseline B0, B1, B4 (bỏ B2/B3, bỏ thí nghiệm số cam); C2 = video 2 cam Tiandy, 11 take; không chạy thêm WILDTRACK; `crowd.K` 4 → 3 (T10 ≥ 4 người phải báo) | Sửa §2, D3, §4, §7.2, §7.5–7.7, §9, §10, §16, §17 cho khớp |
 | — | Có Jetson Orin không: `TODO` | |
 
 ---
@@ -538,22 +532,20 @@ pytest -q && ruff check src eval tools
 ## 16. Câu hỏi mở (hỏi người dùng khi cần)
 
 - Hạn nộp chính xác? (phiếu giao đề chưa ghi ngày)
-- C2 cần thêm kịch bản khiến luật OR (B2) thất bại? (benchmark bán tổng hợp: B2 ngang P về false alarm) — đề xuất: 2 người đứng sát, một người đội mũ; vật giống mũ; cầm mũ sát đầu
 - Phần cứng: GPU dev là gì? Có Jetson Orin không?
 - Có quay được ở môi trường công nghiệp thật không, hay dựng kịch bản trong lab/xưởng trường?
-- GVHD muốn so sánh với "phương pháp hiện có" cụ thể nào (paper nào)? Hay chỉ cần B0–B4?
+- GVHD muốn so sánh với "phương pháp hiện có" cụ thể nào (paper nào)? Hay chỉ cần B0, B1, B4?
 - Giày bảo hộ: chấp nhận scope là "có giày kín" hay bắt buộc phân biệt giày bảo hộ với giày thường?
 
 ---
 
 ## 17. Limitations (ghi sẵn để không quên đưa vào thuyết minh)
 
-- Ground-plane association giả định mặt sàn phẳng và các cam có vùng nhìn chung. Sai khi người bị che chân hoặc đứng trên bậc, giàn.
-- Association phụ thuộc recall detection: trong đám đông dày (WILDTRACK) YOLO-pose chỉ bắt được khoảng 44 % box GT, nên đếm người bị thiếu.
+- Không ghép người giữa các camera: mỗi camera quyết định độc lập, một người có thể bị báo ở nhiều camera (alert trùng), và không bổ sung bằng chứng chéo khi một cam bị che mà cam khác thấy rõ.
 - Không phân biệt được giày bảo hộ với giày thường ở khoảng cách xa (giới hạn của dataset SH17).
 - Dữ liệu té ngã là té giả, có thể khác té thật.
-- Fuse té ngã theo `v` giả định các cam nhìn ngang/chéo. Cam nhìn từ trên xuống thấy rõ nhưng không phân biệt được đứng với nằm, làm điểm fuse giảm (UR Fall cam1); hệ thống không hỗ trợ cam kiểu này.
-- Người bị cắt chân ở mép dưới ảnh (đứng sát cam đặt thấp) có điểm sàn sai khoảng 0.6–0.8 m. Chỉ giảm được tác động (gate riêng, ưu tiên cam khác), không sửa được vị trí.
+- Phát hiện té ngã giả định cam nhìn ngang/chéo. Cam nhìn từ trên xuống thấy rõ nhưng không phân biệt được đứng với nằm (UR Fall cam1); hệ thống không hỗ trợ cam kiểu này.
+- Người bị cắt chân ở mép dưới ảnh (đứng sát cam đặt thấp) có điểm sàn sai khoảng 0.6–0.8 m (đo trên WILDTRACK), ảnh hưởng vùng cấm / vùng rủi ro.
 - Offline backend (Ultralytics) không đạt real-time cho đa luồng (khoảng 16 fps tổng ở 1080p trên RTX 4060 Laptop). DeepStream đạt khoảng 80 fps tổng: real-time 25 fps tối đa 3 cam 1080p trên GPU laptop này (4 cam còn 19.8 fps/cam).
 - Clip bằng chứng live (smart record) là stream gốc của camera, không có OSD (snapshot có overlay vẽ lại từ metadata, lệch tối đa khoảng 1 GOP); chỉ hoạt động với nguồn RTSP.
 - Bộ tự thu có quy mô nhỏ, chưa phải môi trường công nghiệp thật (nếu đúng như vậy).
