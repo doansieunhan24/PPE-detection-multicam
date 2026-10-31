@@ -5,6 +5,8 @@ For every cam*.mp4/.mov in the session folder:
   (phones often record VFR → the offline backend uses pts, configs/perception.yaml)
 - sync events (lights back on) in the first --search-s and last --end-s seconds
   → time_offset_ms relative to --ref and clock drift over the session
+  (no flash: offsets from the PC clock at each camera's first frame, record_meta.json
+  written by tools/record_c2.py; --sync auto picks this when the light events are weak)
 - an empty-floor frame at --calib-s → <session>/calib/<cam>.jpg for calibrate_homography.py
 
 Writes <session>/session_check.json and a cameras YAML for the session (uri = the video files,
@@ -60,6 +62,23 @@ def pts_stats(pts_ms: Sequence[float]) -> dict[str, float | int | bool]:
     }
 
 
+def wallclock_offsets(
+    first_frame_wall_s: dict[str, float], first_pts_ms: dict[str, float], ref: str
+) -> dict[str, int]:
+    """time_offset_ms from the PC clock at each camera's first frame (tools/record_c2.py).
+
+    Same convention as sync_offsets.offsets_and_drift (t_ref − t_cam for one instant): a cam
+    whose first frame arrived later starts its media time later, so its offset is positive.
+    Accuracy = difference in network/encoder latency between cameras (tens to a few hundred
+    ms), no sync event needed.
+    """
+    r_wall, r_pts = first_frame_wall_s[ref], first_pts_ms[ref]
+    return {
+        cam: round((w - r_wall) * 1000.0 + (r_pts - first_pts_ms[cam]))
+        for cam, w in first_frame_wall_s.items()
+    }
+
+
 def find_videos(session: Path) -> dict[str, Path]:
     vids = {
         p.stem: p
@@ -109,6 +128,13 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--end-s", type=float, default=30.0, help="end sync search (0 = off)")
     ap.add_argument("--calib-s", type=float, default=2.0, help="time of the empty-floor frame")
     ap.add_argument("--min-strength", type=float, default=8.0, help="warn below this")
+    ap.add_argument(
+        "--sync",
+        choices=("auto", "light", "wallclock"),
+        default="auto",
+        help="offsets from the light/flash event or from record_meta.json (record_c2.py); "
+        "auto = light if every camera has a clear start event, else wallclock",
+    )
     ap.add_argument("--cameras", default=str(DEFAULT_CONFIG_DIR / "cameras.yaml"))
     ap.add_argument("--out-cameras", default=None)
     args = ap.parse_args(argv)
@@ -119,6 +145,7 @@ def main(argv: list[str] | None = None) -> None:
     report: dict[str, Any] = {"session": session.as_posix(), "ref": args.ref, "cams": {}}
     warnings: list[str] = []
     events: dict[str, tuple[float, float | None]] = {}
+    first_pts: dict[str, float] = {}
     for cam_id, path in videos.items():
         cap = cv2.VideoCapture(str(path))
         info: dict[str, Any] = {
@@ -134,6 +161,7 @@ def main(argv: list[str] | None = None) -> None:
         if args.end_s > 0:
             wins.append((-args.end_s * 1000, float("inf")))
         pts, scans = scan_brightness(str(path), wins)
+        first_pts[cam_id] = float(pts[0])
         info.update(pts_stats(pts))
         t_s, k_s = find_light_on(*scans[0])
         info["sync_start_ms"], info["sync_start_strength"] = round(t_s), round(k_s, 1)
@@ -159,7 +187,26 @@ def main(argv: list[str] | None = None) -> None:
             info["calib_frame"] = out_img.as_posix()
         report["cams"][cam_id] = info
 
-    if args.ref in events:
+    meta_path = session / "record_meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+    walls = {c: m.get("first_frame_wall") for c, m in meta.get("cams", {}).items()}
+    has_wall = args.ref in walls and all(walls.get(c) for c in videos)
+    light_ok = all(report["cams"][c]["sync_start_strength"] >= args.min_strength for c in videos)
+    method = args.sync
+    if method == "auto":
+        method = "light" if light_ok or not has_wall else "wallclock"
+    report["sync_method"] = method
+    if method == "wallclock":
+        if not has_wall:
+            raise SystemExit(
+                f"--sync wallclock needs first_frame_wall for every cam in {meta_path}"
+            )
+        offs = wallclock_offsets({c: walls[c] for c in videos}, first_pts, args.ref)
+        for cam_id, off in offs.items():
+            report["cams"][cam_id].update(time_offset_ms=off, drift_ms=None)
+        # weak light events are expected without a flash: not a warning in this mode
+        warnings = [w for w in warnings if "sync event" not in w]
+    elif args.ref in events:
         for cam_id, r in offsets_and_drift(events, args.ref).items():
             report["cams"][cam_id].update(r)
             if r["drift_ms"] is not None and abs(r["drift_ms"]) > 1000.0 / 25:
@@ -182,7 +229,7 @@ def main(argv: list[str] | None = None) -> None:
             f"sync {c['sync_start_ms']} ms -> offset {c.get('time_offset_ms')} ms, "
             f"drift {c.get('drift_ms')}"
         )
-    print(f"duration spread {max(durs) - min(durs):.1f} s")
+    print(f"duration spread {max(durs) - min(durs):.1f} s; offsets from {method}")
     for w in warnings:
         print("WARNING", w)
     if args.out_cameras:

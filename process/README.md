@@ -51,3 +51,4 @@ Mỗi session làm việc có một file. Claude **đọc lại thư mục này 
 | 2026-10-27 | [2026-10-27_s12.md](2026-10-27_s12.md) | Demo live P7: RTSP → DS → ZMQ → analytics → smart record/OSD/dashboard; sửa crash RTSP (libproxy); độ trễ alert median 554 ms @2 fps |
 | 2026-10-29 | [2026-10-29_s13.md](2026-10-29_s13.md) | Sẵn sàng cho C2: `eval.run_c2` một lệnh val → test (tune từng phương pháp, calib C2, số cam, behavior/association), cache observe (toàn chuỗi 100 s), snapshot live, ảnh track để gán nhãn; chạy thử bằng GT WILDTRACK |
 | 2026-10-31 | [2026-10-31_s14.md](2026-10-31_s14.md) | Bỏ ghép người giữa các cam (`association.mode: none`); eval chấm từng cam; CROWD đếm theo cam; kịch bản C2 = 11 take; commit camera Tiandy LAN |
+| 2026-10-31 | [2026-10-31_s15.md](2026-10-31_s15.md) | `record_c2`; calib sàn gạch + khử méo (cam2 LOO 0.039 m, cam3 0.012 m); thêm cam3 trong sảnh; zones thật; quay C2 s01 T01–T10 (3 cam, gile phản quang); chọn cross-validation theo take |

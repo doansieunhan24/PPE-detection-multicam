@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from tools.session_check import main as session_check_main
-from tools.session_check import pts_stats, session_cameras_yaml
+from tools.session_check import pts_stats, session_cameras_yaml, wallclock_offsets
 from tools.sync_offsets import find_light_on, offsets_and_drift
 
 
@@ -88,3 +88,13 @@ def test_session_check_end_to_end(tmp_path, capsys):
     assert not rep["cams"]["cam1"]["vfr"]
     assert (tmp_path / "calib" / "cam2.jpg").exists()
     assert "time_offset_ms: 600" in out_yaml.read_text(encoding="utf-8")
+
+
+def test_wallclock_offsets_follow_light_convention():
+    # cam2's first frame reached the PC 120 ms after cam1's, both media clocks start at 0:
+    # one instant has media time t on cam1 and t - 120 on cam2 → offset t_ref - t_cam = +120
+    offs = wallclock_offsets({"cam1": 100.000, "cam2": 100.120}, {"cam1": 0.0, "cam2": 0.0}, "cam1")
+    assert offs == {"cam1": 0, "cam2": 120}
+    # a non-zero first pts shifts media time the other way
+    offs = wallclock_offsets({"cam1": 100.0, "cam2": 100.0}, {"cam1": 0.0, "cam2": 40.0}, "cam1")
+    assert offs["cam2"] == -40

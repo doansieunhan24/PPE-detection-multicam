@@ -1,26 +1,28 @@
-# STATUS — cập nhật lần cuối 2026-10-31 (s14)
+# STATUS — cập nhật lần cuối 2026-10-31 (s15)
 
-**Phase hiện tại:** P0, P1, P2 xong (cả DeepStream). Code P5–P7 xong; demo live end-to-end đã chạy. **Chờ dữ liệu C2 (P4).** Từ s14: **bài chỉ xử lý từng camera** (không ghép người giữa các cam, `association.mode: none`; bài chủ yếu là detection), đánh giá C2 chấm từng camera riêng, baseline B0/B1/B4 vs P; không chạy thêm WILDTRACK.
+**Phase hiện tại:** P4 đang làm: **đã quay C2 session 1** (T01–T10, 3 cam). P3 xong cho cam2 + cam3 (calib sàn gạch + khử méo ống kính). Chờ người dùng xác nhận quay lại hướng **đa camera** (cam2+cam3 nhìn chung sảnh).
 
 ## Đã xong
-- P1 offline backend (YOLO11m-pose@960 + ByteTrack → JSONL) + replay; DS 7.1 khớp offline, 3 cam 1080p 26.1 fps/stream
-- PPE detector M2 (YOLO11s@320, SH17+CHV crops): CHV test helmet AP50 0.957, vest 0.913
-- C1 core: part ROI, gán PPE, visibility, evidence (dt-weighted), state machine, Dempster–Shafer, B0–B4, alert rules
-- Behavior: fall (UR Fall cam0 F1 0.811; MCFD 8 cam vmean 0.696, 1D-CNN 0.762), intrusion/crowd (WILDTRACK)
-- Demo live (s12): DS → ZMQ → `analytics_live` → SQLite/dashboard, smart record, OSD, snapshot (s13)
-- `eval/run_c2.py` một lệnh val → test (s13)
-- **(s14)** `association.mode: none` (mặc định) / `ground_plane`; eval chấm từng camera (`--per-cam auto`, bỏ B2/B3 và numcams); CROWD đếm theo cam thấy nhiều người nhất; `crowd.K` = 3; CLAUDE.md §2/§7/§10/§17 sửa theo hướng từng camera; kịch bản C2 = 11 take (`docs/c2_shooting_script.md/.pdf`); camera thật 2 × Tiandy TC-C131N qua LAN (`configs/cameras_lan.yaml`, mật khẩu trong `.env`)
-- 175 test pass, ruff sạch (pytest cần `--basetemp` ghi được trên máy này)
+- P0–P2 (DS + offline), code P5–P7, demo live (s12–s13)
+- (s15) `tools/record_c2.py` ghi RTSP 3 cam; `session_check --sync wallclock` (không cần flash)
+- (s15) Calibration sàn gạch caro + mô hình méo: cam2 LOO 0.039 m, cam3 LOO 0.012 m, chung hệ toạ độ sàn (gạch 0.67 m); cam1 (hành lang) không calib được
+- (s15) Zones thật: Z2 vùng cấm trước cửa thoát hiểm, Z3 vùng rủi ro giữa sảnh, Z1 PPE; `crowd.K` = 2
+- (s15) **Dữ liệu C2 s01**: `data/raw/s01_t01` … `s01_t10` (cam1 hành lang, cam2 + cam3 sảnh, 25 fps, không mất frame), gile phản quang; detector (JSONL) xong cho t01–t03
+- 180 test pass, ruff sạch
 
 ## Đang dở
-- Không có (s14 đã commit: `9d08c4d`, `9438fc0`)
+- JSONL s01_t04 (dở), s01_t05 (dở), s01_t06–t10 (chưa chạy): tác vụ nền bị dừng vì thiếu RAM → chạy lại **tuần tự**
+- Chưa commit: cam3 (config + calib + ảnh), `session_check` wallclock, `crowd.K`, bản đồ setup, log s15
 
 ## Blocker / chờ người dùng
-- Quay C2; trả lời câu hỏi mở §16; license WILDTRACK TODO(verify); Telegram cần token trong `.env`
+- Xác nhận hướng đa camera (bật `association.mode: ground_plane`, sửa CLAUDE.md §2/D3/§7.6/§10)
+- s02 tuần sau (giày bảo hộ, đổi vai/đồ, F1–F6, T11)
 
 ## Ưu tiên tiếp theo
-1. Có C2: `session_check` → `calibrate_homography` (cam thấy vùng cấm; ống kính Tiandy méo, xử lý trước) → `ultralytics_runner` → `label_intervals` → sửa `configs/c2_split.yaml` → `python -m eval.run_c2 --steps check` → `python -m eval.run_c2 --jobs 4`
-2. Đo độ trễ alert / FPS live ở 25 fps với cam Tiandy
+1. Detector cho s01_t04 … t10 (tuần tự): `python -m src.perception_offline.ultralytics_runner --cameras data/raw/s01_tNN/cameras.yaml --out data/jsonl/s01_tNN` (chạy `session_check --sync wallclock` trước cho t05–t10)
+2. Cross-validation theo take trong `eval.run_c2`
+3. Gán nhãn s01 (`tools/label_intervals.py`), ghi chú take trong `process/2026-10-31_s15.md`
+4. Cập nhật `docs/c2_shooting_script.md` theo cách quay thực tế
 
 ## Session gần nhất
-- [2026-10-31_s14.md](2026-10-31_s14.md) (trước đó: s13, s12, s05–s11)
+- [2026-10-31_s15.md](2026-10-31_s15.md) (trước đó: s14, s13, s12)

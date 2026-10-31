@@ -319,7 +319,7 @@ B2 (OR nhiều cam) và B3 (majority vote nhiều cam) chỉ có nghĩa khi ghé
   - Mỗi camera tự quyết (không ghép cam). Phần fuse đa góc theo `v` (`fall.fusion`) chỉ còn chạy khi `association.mode: ground_plane`; số liệu MCFD đa cam (s07) là thí nghiệm trước khi đổi hướng.
 - **Immobility:** dịch chuyển keypoint trung bình < ε trong ≥ `T_immobile` **và** tư thế nằm/ngồi bệt **và** nằm trong vùng rủi ro, hoặc ngay sau một sự kiện fall. Phân biệt với người đứng yên làm việc bình thường.
 - **Intrusion:** `floor_xy` nằm trong polygon vùng cấm ≥ `T_intr` (mặc định 1 s). Dùng toạ độ sàn đã fuse, không dùng ROI ảnh, để không bị lệch phối cảnh.
-- **Crowd:** số người trong zone rủi ro > K (mặc định K = 3, tức ≥ 4 người) trong ≥ T giây. Không ghép cam thì đếm trong từng camera và lấy camera thấy nhiều người nhất (không cộng các cam, tránh đếm trùng).
+- **Crowd:** số người trong zone rủi ro > K (mặc định K = 2, tức ≥ 3 người; C2 chỉ có 3 người diễn) trong ≥ T giây. Không ghép cam thì đếm trong từng camera và lấy camera thấy nhiều người nhất (không cộng các cam, tránh đếm trùng).
 
 ### 7.8 Alerts (`alerts/`)
 
@@ -421,7 +421,7 @@ B2 (OR nhiều cam) và B3 (majority vote nhiều cam) chỉ có nghĩa khi ghé
 | P8 | 12–14 | Ablation, sensitivity, FPS bench, (optional) Jetson Orin | Toàn bộ bảng/biểu đồ trong `eval/reports/` |
 | P9 | 14–16 | Viết thuyết minh, slide, video demo | — |
 
-**Trạng thái hiện tại:** P1, P2 xong; code P5–P7 xong và test offline (association đã kiểm chứng trên WILDTRACK). Chuỗi xử lý C2 (session_check → nhãn → baselines/ablation/sensitivity) đã chạy thử từ đầu đến cuối. P6: event metrics cho fall (UR Fall + MCFD), intrusion và crowd (WILDTRACK); immobility chờ C2. P0 xong; P1/P2 phần DeepStream xong: YOLO11m-pose + NvDCF + SGIE PPE chạy trong DS 7.1, JSONL khớp backend offline, 3 cam 1080p đạt 26 fps/stream (4 cam 19.8). P7 demo live end-to-end chạy được (RTSP → DS → ZMQ → `analytics_live` → SQLite/dashboard, smart record theo alert, OSD qua mediamtx). Chờ dữ liệu C2 (P4). Đánh giá C2 đã gom thành một lệnh `python -m eval.run_c2` (val → test, tune từng phương pháp, mọi bảng §10.3 trừ detector/FPS), đã chạy thử bằng GT WILDTRACK. Từ 2026-10-31 không ghép người giữa các cam (`association.mode: none`), đánh giá C2 chấm từng camera; camera thật: 2 × Tiandy qua LAN. Chi tiết: `process/STATUS.md`.
+**Trạng thái hiện tại:** P0–P2 xong (cả DeepStream); code P5–P7 xong, demo live chạy được. P3 xong cho cam2 + cam3 (calib sàn gạch + khử méo). **P4: đã quay C2 session 1** (T01–T10, 3 cam Tiandy: cam1 hành lang, cam2 + cam3 sảnh), đánh giá bằng cross-validation theo take; s02 tuần sau. Chờ xác nhận quay lại ghép người đa camera (`ground_plane`). Chi tiết: `process/STATUS.md`.
 
 ---
 
@@ -526,6 +526,11 @@ pytest -q && ruff check src eval tools
 | 2026-10-31 | **Cam thật:** 2 × Tiandy TC-C131N (1080p H264 25 fps, RTSP `/1/1`, substream `/1/2`) qua Ethernet, `configs/cameras_lan.yaml`; tài khoản cam trong `.env` (`CAM_USER`/`CAM_PASS`), `uri` dùng `${VAR}` và `load_cameras` thế + URL-encode | Không commit mật khẩu; mật khẩu có `@` phải encode trong URL. IP link-local 169.254.x có thể đổi khi cam khởi động lại. Ống kính méo cong rõ: cần xử lý trước homography |
 | 2026-10-31 | **Bài chỉ xử lý từng camera** (người dùng quyết định, bài chủ yếu là detection): C1 = tích lũy theo thời gian có trọng số `v` + UNKNOWN trên từng camera; baseline B0, B1, B4 (bỏ B2/B3, bỏ thí nghiệm số cam); C2 = video 2 cam Tiandy, 11 take; không chạy thêm WILDTRACK; `crowd.K` 4 → 3 (T10 ≥ 4 người phải báo) | Sửa §2, D3, §4, §7.2, §7.5–7.7, §9, §10, §16, §17 cho khớp |
 | 2026-10-31 | **Calibration cam thật bằng sàn gạch caro + mô hình méo ống kính** (`src/geometry/floor_grid.py`, `calibrate_homography.py grid / fit --undistort`): `cam*.yaml` có thêm `K`, `dist`; `to_floor` khử méo rồi mới nhân H. Chỉ fit k1, k2 (f, tâm ảnh cố định). Gạch 0.67 m. **cam1 (hành lang) không có homography**; vùng cấm Z2 / vùng rủi ro Z3 trong khung cam2 (người dùng chọn cam2) | Ống kính Tiandy méo thùng: cam2 LOO 0.156 m → 0.039 m khi khử méo. Một mặt phẳng không tách được f với k1, fit K đầy đủ không ổn định. Hành lang chỉ có một hàng góc gạch thẳng hàng |
+| 2026-10-31 | `crowd.K` 3 → 2: tụ tập = ≥ 3 người trong vùng rủi ro (người dùng chốt) | Nhóm quay C2 chỉ có 3 người |
+| 2026-10-31 | **Quay C2 mỗi take một thư mục** (`data/raw/s01_tNN`), đồng bộ cam theo đồng hồ PC lúc frame đầu (`session_check --sync wallclock`, không cần flash); áo PPE = **gile phản quang** | Người dùng không nháy flash; độ lệch đo được ≤ 92 ms. Áo đồng phục xanh: detector nhận 0 % |
+| 2026-10-31 | **Thêm cam3 trong sảnh** nhìn chung vùng với cam2 (lệch ~46°), calib cùng lưới gạch; cam1 giữ ở hành lang. Chuyển `association.mode` sang `ground_plane`: **chờ người dùng xác nhận** | Người dùng muốn challenge fusion đa camera |
+| 2026-10-31 | T09 không té ngã thật: IMMOBILE đánh giá bằng ngồi/nằm xuống từ từ + đứng yên; té ngã giữ số liệu UR Fall/MCFD | Người dùng bỏ té ngã (an toàn) |
+| 2026-10-31 | **s01 đánh giá bằng cross-validation theo take** (tune trên các take khác, test trên take còn lại); s02 quay sau (giày bảo hộ, đổi vai/đồ, F1–F6) | Chưa có session test riêng; chia theo take đơn lẻ làm mất loại tình huống ở test |
 | — | Có Jetson Orin không: `TODO` | |
 
 ---

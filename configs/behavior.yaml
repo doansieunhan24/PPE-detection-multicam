@@ -27,7 +27,7 @@ intrusion:
   T_intr_s: 1.0
 
 crowd:
-  K: 3                        # alert when count > K (≥ 4 people, C2 take T10); zones may override with crowd_max
+  K: 2                        # alert when count > K (≥ 3 people: C2 take T10 has 3 actors, 2026-10-31); zones may override with crowd_max
   T_s: 5.0
   zone_types: [risk]          # zone types where crowd is checked
 
