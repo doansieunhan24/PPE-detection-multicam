@@ -1,6 +1,6 @@
 # STATUS — cập nhật lần cuối 2026-10-31 (s15)
 
-**Phase hiện tại:** P4 đang làm: **đã quay C2 session 1** (T01–T10, 3 cam). P3 xong cho cam2 + cam3 (calib sàn gạch + khử méo ống kính). Chờ người dùng xác nhận quay lại hướng **đa camera** (cam2+cam3 nhìn chung sảnh).
+**Phase hiện tại:** P4 đang làm: **đã quay C2 session 1** (T01–T10, 3 cam). P3 xong cho cam2 + cam3 (calib sàn gạch + khử méo ống kính). **Không ghép người giữa các cam** (người dùng chốt): 3 cam chấm riêng, `association.mode: none`.
 
 ## Đã xong
 - P0–P2 (DS + offline), code P5–P7, demo live (s12–s13)
@@ -12,11 +12,9 @@
 
 ## Đang dở
 - JSONL s01_t04 (dở), s01_t05 (dở), s01_t06–t10 (chưa chạy): tác vụ nền bị dừng vì thiếu RAM → chạy lại **tuần tự**
-- Chưa commit: cam3 (config + calib + ảnh), `session_check` wallclock, `crowd.K`, bản đồ setup, log s15
 
 ## Blocker / chờ người dùng
-- Xác nhận hướng đa camera (bật `association.mode: ground_plane`, sửa CLAUDE.md §2/D3/§7.6/§10)
-- s02 tuần sau (giày bảo hộ, đổi vai/đồ, F1–F6, T11)
+- s02 tuần sau (giày bảo hộ, đổi vai/đồ, T11)
 
 ## Ưu tiên tiếp theo
 1. Detector cho s01_t04 … t10 (tuần tự): `python -m src.perception_offline.ultralytics_runner --cameras data/raw/s01_tNN/cameras.yaml --out data/jsonl/s01_tNN` (chạy `session_check --sync wallclock` trước cho t05–t10)

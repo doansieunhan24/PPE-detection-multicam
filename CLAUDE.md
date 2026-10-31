@@ -367,7 +367,7 @@ B2 (OR nhiều cam) và B3 (majority vote nhiều cam) chỉ có nghĩa khi ghé
 
 ### 9.1 Kế hoạch thu bộ tự thu (C2)
 
-- Camera thật: 2 × Tiandy TC-C131N (`configs/cameras_lan.yaml`). Các cam **không cần nhìn chung vùng sàn**; mỗi cam chấm riêng. Homography chỉ cần cho cam thấy vùng cấm / vùng rủi ro.
+- Camera thật: 3 × Tiandy TC-C131N (`configs/cameras_lan.yaml`): cam1 hành lang, cam2 + cam3 sảnh (cam2, cam3 có homography). Các cam **không cần nhìn chung vùng sàn**; mỗi cam chấm riêng. Homography chỉ cần cho cam thấy vùng cấm / vùng rủi ro.
 - Đồng bộ (vỗ tay hoặc bật/tắt đèn đầu session, `tools/sync_offsets.py`) chỉ để gán nhãn một lần dùng cho mọi cam.
 - **Kịch bản:** 11 take T01–T11 trong `docs/c2_shooting_script.md` (kèm bảng nhãn). T04 (quay lưng / vật cản, đủ PPE) là take quan trọng nhất cho C1.
 - **Nhãn:** interval `(person_gt_id, item, state, t_start, t_end)` qua `tools/label_intervals.py`. Kèm GT person ID cho mỗi `(cam, track)` để nối alert với người. Nếu có thể, thêm bbox keyframe trên CVAT để đo detector.
@@ -421,7 +421,7 @@ B2 (OR nhiều cam) và B3 (majority vote nhiều cam) chỉ có nghĩa khi ghé
 | P8 | 12–14 | Ablation, sensitivity, FPS bench, (optional) Jetson Orin | Toàn bộ bảng/biểu đồ trong `eval/reports/` |
 | P9 | 14–16 | Viết thuyết minh, slide, video demo | — |
 
-**Trạng thái hiện tại:** P0–P2 xong (cả DeepStream); code P5–P7 xong, demo live chạy được. P3 xong cho cam2 + cam3 (calib sàn gạch + khử méo). **P4: đã quay C2 session 1** (T01–T10, 3 cam Tiandy: cam1 hành lang, cam2 + cam3 sảnh), đánh giá bằng cross-validation theo take; s02 tuần sau. Chờ xác nhận quay lại ghép người đa camera (`ground_plane`). Chi tiết: `process/STATUS.md`.
+**Trạng thái hiện tại:** P0–P2 xong (cả DeepStream); code P5–P7 xong, demo live chạy được. P3 xong cho cam2 + cam3 (calib sàn gạch + khử méo). **P4: đã quay C2 session 1** (T01–T10, 3 cam Tiandy: cam1 hành lang, cam2 + cam3 sảnh), đánh giá bằng cross-validation theo take; s02 tuần sau. Không ghép người giữa các cam: 3 cam chấm riêng. Chi tiết: `process/STATUS.md`.
 
 ---
 
@@ -528,7 +528,7 @@ pytest -q && ruff check src eval tools
 | 2026-10-31 | **Calibration cam thật bằng sàn gạch caro + mô hình méo ống kính** (`src/geometry/floor_grid.py`, `calibrate_homography.py grid / fit --undistort`): `cam*.yaml` có thêm `K`, `dist`; `to_floor` khử méo rồi mới nhân H. Chỉ fit k1, k2 (f, tâm ảnh cố định). Gạch 0.67 m. **cam1 (hành lang) không có homography**; vùng cấm Z2 / vùng rủi ro Z3 trong khung cam2 (người dùng chọn cam2) | Ống kính Tiandy méo thùng: cam2 LOO 0.156 m → 0.039 m khi khử méo. Một mặt phẳng không tách được f với k1, fit K đầy đủ không ổn định. Hành lang chỉ có một hàng góc gạch thẳng hàng |
 | 2026-10-31 | `crowd.K` 3 → 2: tụ tập = ≥ 3 người trong vùng rủi ro (người dùng chốt) | Nhóm quay C2 chỉ có 3 người |
 | 2026-10-31 | **Quay C2 mỗi take một thư mục** (`data/raw/s01_tNN`), đồng bộ cam theo đồng hồ PC lúc frame đầu (`session_check --sync wallclock`, không cần flash); áo PPE = **gile phản quang** | Người dùng không nháy flash; độ lệch đo được ≤ 92 ms. Áo đồng phục xanh: detector nhận 0 % |
-| 2026-10-31 | **Thêm cam3 trong sảnh** nhìn chung vùng với cam2 (lệch ~46°), calib cùng lưới gạch; cam1 giữ ở hành lang. Chuyển `association.mode` sang `ground_plane`: **chờ người dùng xác nhận** | Người dùng muốn challenge fusion đa camera |
+| 2026-10-31 | **Thêm cam3 trong sảnh** (lệch ~46° với cam2), calib cùng lưới gạch; cam1 giữ ở hành lang. **Không quay lại ghép người đa camera** (người dùng chốt): giữ `association.mode: none`, cam3 là camera độc lập thứ ba, chấm riêng như cam1/cam2; bỏ các take fusion F1–F6 | Bài tập trung vào detection từng camera (giữ quyết định s14) |
 | 2026-10-31 | T09 không té ngã thật: IMMOBILE đánh giá bằng ngồi/nằm xuống từ từ + đứng yên; té ngã giữ số liệu UR Fall/MCFD | Người dùng bỏ té ngã (an toàn) |
 | 2026-10-31 | **s01 đánh giá bằng cross-validation theo take** (tune trên các take khác, test trên take còn lại); s02 quay sau (giày bảo hộ, đổi vai/đồ, F1–F6) | Chưa có session test riêng; chia theo take đơn lẻ làm mất loại tình huống ở test |
 | — | Có Jetson Orin không: `TODO` | |
