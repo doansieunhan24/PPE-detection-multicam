@@ -27,7 +27,7 @@ import signal
 import time
 from pathlib import Path
 
-from src.common.config import DEFAULT_CONFIG_DIR, load_yaml
+from src.common.config import DEFAULT_CONFIG_DIR, load_cameras, load_yaml
 from src.common.logging import get_logger, setup_logging
 from src.common.schemas import PerceptionFrame, PersonDet, PPEDet
 from src.perception_offline.convert import pad_clip_bbox
@@ -382,7 +382,7 @@ def main(argv: list[str] | None = None) -> None:
     from gi.repository import GLib, Gst
 
     Gst.init(None)
-    cams = load_yaml(args.cameras)["cameras"]
+    cams = load_cameras(args.cameras)["cameras"]
     for c in cams:  # relative file paths (as in session cameras.yaml) → file:// URIs
         if "://" not in c["uri"]:
             c["uri"] = Path(c["uri"]).resolve().as_uri()

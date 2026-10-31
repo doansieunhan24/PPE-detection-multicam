@@ -18,7 +18,7 @@ from typing import Any
 import cv2
 import numpy as np
 
-from src.common.config import DEFAULT_CONFIG_DIR, load_yaml
+from src.common.config import DEFAULT_CONFIG_DIR, load_cameras, load_yaml
 from src.common.logging import get_logger, setup_logging
 from src.common.schemas import PerceptionFrame, PersonDet
 from src.parts.ppe_assign import containment
@@ -230,7 +230,7 @@ def main(argv: list[str] | None = None) -> None:
     args = ap.parse_args(argv)
 
     setup_logging()
-    cams_cfg = load_yaml(args.cameras)
+    cams_cfg = load_cameras(args.cameras)
     perception_cfg = load_yaml(args.perception)
     sources = _parse_sources(args.source)
 

@@ -530,7 +530,8 @@ pytest -q && ruff check src eval tools
 | 2026-10-29 | **Không thêm cờ loại cam nhìn từ trên xuống** cho fuse fall; giữ `fall.fusion: vmean` (người dùng xác nhận) | Hệ thống và C2 không có cam nhìn từ trên xuống (cam đặt thấp, nhìn ngang/chéo). Vấn đề chỉ gặp ở UR Fall cam1 (trần); ghi vào Limitations |
 | 2026-10-31 | **Bỏ ghép người giữa các camera** (người dùng quyết định): `association.mode: none` trong `configs/zones.yaml`, mỗi `(cam, track_id)` là một người riêng. Code ground-plane (D3) giữ lại, bật bằng `mode: ground_plane` | Không fuse đa cam theo người nữa: fusion C1 chỉ còn theo thời gian trong từng cam; B2–B4, thí nghiệm 1/2/3 cam, đếm CROWD và fuse fall đa cam cần xem lại. `eval_association` vẫn đo phương pháp ground-plane |
 | 2026-10-31 | Khi `association.mode: none`: **eval chấm từng camera riêng** (`run_baselines`/`tune_c2`/`run_sensitivity --per-cam auto`, bỏ B2/B3 và thí nghiệm số cam); **CROWD đếm theo cam thấy nhiều người nhất** trong zone thay vì cộng mọi `global_id` | Không ghép người thì mỗi cam là một hệ thống độc lập; cộng `global_id` giữa các cam đếm trùng một người k lần |
-| — | Số cam / loại cam / có Jetson Orin không: `TODO` | |
+| 2026-10-31 | **Cam thật:** 2 × Tiandy TC-C131N (1080p H264 25 fps, RTSP `/1/1`, substream `/1/2`) qua Ethernet, `configs/cameras_lan.yaml`; tài khoản cam trong `.env` (`CAM_USER`/`CAM_PASS`), `uri` dùng `${VAR}` và `load_cameras` thế + URL-encode | Không commit mật khẩu; mật khẩu có `@` phải encode trong URL. IP link-local 169.254.x có thể đổi khi cam khởi động lại. Ống kính méo cong rõ: cần xử lý trước homography |
+| — | Có Jetson Orin không: `TODO` | |
 
 ---
 

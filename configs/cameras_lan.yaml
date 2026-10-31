@@ -1,0 +1,22 @@
+# Two Tiandy TC-C131N IP cameras on the laptop's Ethernet port (found via ONVIF, 2026-10-31).
+# Main stream 1920x1080 H264 25 fps; substream 704x576: /1/2 instead of /1/1.
+# ${CAM_USER} / ${CAM_PASS} come from .env (gitignored) and are URL-encoded by load_cameras.
+# IPs are link-local (no DHCP on this link) and may change after a camera reboot:
+# re-run ONVIF discovery or set static IPs before recording C2.
+# time_offset_ms comes from tools/sync_offsets.py.
+
+sync_tol_ms: 50
+
+cameras:
+  - cam_id: cam1  # corridor, serial ...1791152
+    uri: rtsp://${CAM_USER}:${CAM_PASS}@169.254.249.55:554/1/1?transmode=unicast&profile=vam
+    fps: 25
+    resolution: [1920, 1080]
+    time_offset_ms: 0
+    calibration: configs/calibration/cam1.yaml
+  - cam_id: cam2  # lobby / exit door, serial ...0591032
+    uri: rtsp://${CAM_USER}:${CAM_PASS}@169.254.249.201:554/1/1?transmode=unicast&profile=vam
+    fps: 25
+    resolution: [1920, 1080]
+    time_offset_ms: 0
+    calibration: configs/calibration/cam2.yaml

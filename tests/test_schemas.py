@@ -88,3 +88,25 @@ def test_apply_overrides_dotted_keys():
     assert apply_overrides(cfg, None) == cfg
     with pytest.raises(KeyError):
         apply_overrides(cfg, {"evidence.theta_obz": 1})
+
+
+def test_load_cameras_fills_credentials_from_env_file(tmp_path, monkeypatch):
+    from src.common.config import load_cameras
+
+    monkeypatch.delenv("CAM_USER", raising=False)
+    monkeypatch.delenv("CAM_PASS", raising=False)
+    (tmp_path / ".env").write_text("# secrets\nCAM_USER=admin\nCAM_PASS='p@ss:1'\n")
+    (tmp_path / "cams.yaml").write_text(
+        "cameras:\n"
+        "  - {cam_id: cam1, uri: 'rtsp://${CAM_USER}:${CAM_PASS}@10.0.0.2:554/1/1'}\n"
+        "  - {cam_id: cam2, uri: data/raw/cam2.mp4}\n"
+    )
+    cams = load_cameras(tmp_path / "cams.yaml", env_file=tmp_path / ".env")["cameras"]
+    assert cams[0]["uri"] == "rtsp://admin:p%40ss%3A1@10.0.0.2:554/1/1"
+    assert cams[1]["uri"] == "data/raw/cam2.mp4"
+    monkeypatch.setenv("CAM_USER", "op")  # environment wins over .env
+    assert load_cameras(tmp_path / "cams.yaml", env_file=tmp_path / ".env")["cameras"][0][
+        "uri"
+    ].startswith("rtsp://op:")
+    with pytest.raises(KeyError):
+        load_cameras(tmp_path / "cams.yaml", env_file=tmp_path / "missing.env")  # CAM_PASS unset
