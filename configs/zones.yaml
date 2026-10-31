@@ -1,4 +1,4 @@
-# Zones on the floor map (metres). Draw with tools/draw_zones.py.
+# Zones on the floor map (metres). Check on the image: tools/calibrate_homography.py figures --zones.
 # type: forbidden | risk | ppe_required
 
 association:
@@ -25,12 +25,22 @@ association:
 # PPE required when the person has no floor position (uncalibrated) or is outside all zones
 default_required_ppe: [helmet, vest]
 
+# C2 lobby seen by cam2 (configs/calibration/cam2.yaml, 2026-10-31). Floor frame from the tile
+# grid: 1 tile = 0.67 m, origin = left corner of the white tile right of the bin, x towards the
+# exit-door wall (x ≈ 1.34), y along it (left wall with the fire cabinet at y ≈ -1.2; door
+# spans y ≈ -0.78..0.27). Edges follow tile joints so actors can see them on the floor.
+# cam1 (corridor) has no homography: no zone applies there (default_required_ppe, no
+# INTRUSION / CROWD). The first zone containing the floor point wins: specific zones first.
 zones:
-  - id: Z1
-    type: ppe_required
-    polygon_m: [[0, 0], [6, 0], [6, 8], [0, 8]]   # TODO: replace with real layout
-    required_ppe: [helmet, vest]
   - id: Z2
-    type: forbidden
-    polygon_m: [[4, 6], [6, 6], [6, 8], [4, 8]]   # TODO: replace with real layout
+    type: forbidden            # 2 × 2 tiles in front of the exit door (T08)
+    polygon_m: [[0.0, -0.67], [1.34, -0.67], [1.34, 0.67], [0.0, 0.67]]
     required_ppe: [helmet, vest, boots]
+  - id: Z3
+    type: risk                 # 2 × 3 tiles mid-lobby: crowd (T10), lying still (T09)
+    polygon_m: [[-1.34, -0.67], [0.0, -0.67], [0.0, 1.34], [-1.34, 1.34]]
+    required_ppe: [helmet, vest]
+  - id: Z1
+    type: ppe_required         # rest of the lobby floor
+    polygon_m: [[-3.35, -1.34], [1.34, -1.34], [1.34, 3.35], [-3.35, 3.35]]
+    required_ppe: [helmet, vest]

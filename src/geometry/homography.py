@@ -16,9 +16,12 @@ Point = tuple[float, float]
 @dataclass
 class CameraCalibration:
     cam_id: str
-    H: np.ndarray | None  # 3x3 image(px) -> floor(m)
+    H: np.ndarray | None  # 3x3 undistorted image(px) -> floor(m)
     reprojection_error_m: float | None = None
     fov_floor_polygon_m: list[Point] = field(default_factory=list)
+    # lens: pixels are undistorted with (K, dist) before H; None = pinhole (H on raw pixels)
+    K: np.ndarray | None = None
+    dist: np.ndarray | None = None
 
     @property
     def calibrated(self) -> bool:
@@ -27,7 +30,9 @@ class CameraCalibration:
     def to_floor(self, pts_px: np.ndarray) -> np.ndarray:
         if self.H is None:
             raise ValueError(f"{self.cam_id}: not calibrated")
-        return apply_homography(self.H, pts_px)
+        from src.geometry.floor_grid import undistort_px
+
+        return apply_homography(self.H, undistort_px(pts_px, self.K, self.dist))
 
     def sees(self, pt_m: Point, margin_m: float = 0.0) -> bool:
         """Inside this camera's floor FOV, or within margin_m of its border (people cut by the
@@ -40,12 +45,17 @@ class CameraCalibration:
 
 def load_calibration(path: str | Path) -> CameraCalibration:
     d = load_yaml(path)
-    H = np.asarray(d["H"], dtype=np.float64) if d.get("H") is not None else None
+
+    def arr(key: str) -> np.ndarray | None:
+        return np.asarray(d[key], dtype=np.float64) if d.get(key) is not None else None
+
     return CameraCalibration(
         cam_id=d["cam_id"],
-        H=H,
+        H=arr("H"),
         reprojection_error_m=d.get("reprojection_error_m"),
         fov_floor_polygon_m=[tuple(p) for p in d.get("fov_floor_polygon_m") or []],
+        K=arr("K"),
+        dist=arr("dist"),
     )
 
 
@@ -100,15 +110,20 @@ def floor_fov_polygon(
     max_dist_m: float,
     top_ratio: float = 0.0,
     n_samples: int = 64,
+    K: np.ndarray | None = None,
+    dist: np.ndarray | None = None,
 ) -> list[list[float]]:
     """Floor footprint of the image (convex hull of mapped border samples).
 
     Border points above the horizon map behind the camera (homogeneous w of the other sign
     than the floor markers ref_img_pts) and are dropped, as are points farther than
     max_dist_m from the floor point of the bottom-centre pixel. Matters for low cameras,
-    whose horizon is near the middle of the image.
+    whose horizon is near the middle of the image. With (K, dist), H is on undistorted pixels:
+    the border and ref_img_pts (raw pixels) are undistorted first.
     """
     import cv2
+
+    from src.geometry.floor_grid import undistort_px
 
     top = img_h * top_ratio
     t = np.linspace(0.0, 1.0, n_samples)
@@ -120,6 +135,8 @@ def floor_fov_polygon(
             np.c_[np.zeros_like(t), top + t * (img_h - 1 - top)],  # left
         ]
     )
+    border = undistort_px(border, K, dist)
+    ref_img_pts = undistort_px(np.asarray(ref_img_pts, dtype=np.float64).reshape(-1, 2), K, dist)
 
     def w_of(pts: np.ndarray) -> np.ndarray:
         return (np.hstack([pts, np.ones((len(pts), 1))]) @ H.T)[:, 2]
@@ -127,7 +144,7 @@ def floor_fov_polygon(
     sign = np.sign(np.mean(w_of(np.asarray(ref_img_pts, dtype=np.float64).reshape(-1, 2))))
     ok = w_of(border) * sign > 1e-9
     fl = apply_homography(H, border[ok])
-    centre = apply_homography(H, np.array([[img_w / 2, img_h - 1]]))[0]
+    centre = apply_homography(H, undistort_px(np.array([[img_w / 2, img_h - 1]]), K, dist))[0]
     fl = fl[np.linalg.norm(fl - centre, axis=1) <= max_dist_m]
     if len(fl) < 3:
         return []

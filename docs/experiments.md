@@ -389,3 +389,19 @@ UR Fall (cấu hình cuối): cam0 test P/R/F1 0.682/1.000/0.811, FA 134.8/giờ
 - **Bổ sung s13 (cùng ngày):**
   - Tune tự nới lưới khi giá trị tốt nhất nằm ở biên (giảm một nửa / gấp đôi, tối đa 3 lần mỗi tham số, `eval/tune_c2.BOUNDS`). Chạy lại bản chạy thử: P thử thêm theta_obs 0.125, tau_s 0.25, T_alert_s 0.5 và giữ giá trị cũ (nay là điểm tối ưu bên trong lưới); B1 T_alert_s 1 → 0.5 (thử thêm 0.25, không tốt hơn). Không còn tham số ở biên. Toàn chuỗi 114 s.
   - **Snapshot live với DeepStream thật** (DS 7.1 WSL2, 3 RTSP wt3 2 fps, smart record): lần 1 (DS 200 s, analytics 170 s) 35/38 snapshot; 3 thiếu là clip kích ngay trước lúc analytics dừng, worker bỏ job khi clip chưa có. Sửa: sau `close()` vẫn chờ tới hạn. Lần 2 (DS 150 s, analytics 130 s, `data/results/live_s13b/live_stats.json`): **28/28 snapshot**, 28 alert trong SQLite có `evidence.snapshot`; 65 alert, độ trễ alert median 409 ms (p95 966), bước analytics median 17.5 ms. Khung đỏ của người bị báo khớp với người trong clip (kiểm tra bằng mắt).
+
+## 2026-10-31 — Calibration cam thật (Tiandy TC-C131N) bằng sàn gạch caro + mô hình méo ống kính
+- **Code:** commit gốc `056a04a` + thay đổi chưa commit của s15. Mới: `src/geometry/floor_grid.py` (dò góc gạch từ 1 viên click tay, fit méo k1/k2, khử méo), `CameraCalibration.K/dist` (`to_floor` khử méo trước H), `tools/calibrate_homography.py grid | fit --undistort | figures`, `tests/test_floor_grid.py` (sàn caro tổng hợp có méo đã biết).
+- **Dữ liệu:** 1 frame mỗi cam (`data/raw/calib_lan/cam{1,2}.jpg`), 1920×1080. Gạch 0.67 m (người dùng đo).
+- **Cách làm:** góc gạch là điểm X có toạ độ sàn biết trước. Từ 4 góc của 1 viên, lưới được lan ra bằng homography cục bộ, tinh chỉnh `cornerSubPix`, giữ khi là điểm yên ngựa đúng chẵn/lẻ màu và 2 ô đối diện cùng màu (loại tủ cứu hoả, chân tường, cửa). Méo ống kính: chỉ ước lượng k1, k2 (f cố định 0.6·w, tâm ảnh cố định) sao cho các góc nằm trên một mặt phẳng. Một mặt phẳng không tách được f và k1, nhưng ánh xạ ảnh → sàn không đổi khi đổi f (cam2: f 0.5w / 0.6w / 0.8w cùng sai số 3.85 px theo trục). Fit đầy đủ K + méo (`cv2.calibrateCamera` một view) không ổn định: f 1572, k2 −1.56, loại 10/20 điểm đúng.
+- **cam2 (sảnh), `configs/calibration/cam2.yaml`:** 20 góc gạch (toàn bộ góc nhìn thấy; hàng gần cam nhất nằm ngoài khung hình), không góc nào sai (kiểm bằng mắt, `docs/figures/calibration/cam2_grid_corners.jpg`). k1 −0.1564, k2 0.0292.
+
+| | Góc so với mặt phẳng (px, RMS) | Sàn RMS in-sample (m) | Sàn leave-one-out RMS (m) | LOO max (m) |
+|---|---|---|---|---|
+| Homography trên pixel gốc | 9.87 | 0.117 | 0.156 | 0.318 |
+| Khử méo + homography | 5.44 | 0.029 | **0.039** | 0.080 |
+
+  k1/k2 fit trên chính các điểm này nên LOO của dòng 2 hơi lạc quan (H thì vẫn bỏ từng điểm). Ngoài vùng có góc gạch (sát mép dưới ảnh) là ngoại suy: ảnh nhìn từ trên xuống (`cam2_birdseye.jpg`) cho gạch hơi cong ở đó.
+- **cam1 (hành lang): không calib.** Hành lang rộng khoảng 2 viên gạch, chỉ một hàng góc nằm hẳn trong sàn (thẳng hàng, không đủ cho homography), các góc khác bị len chân tường che (`cam1_corridor_floor_zoom.png`). cam1 không có homography → không chấm INTRUSION/CROWD; PPE, té ngã vẫn chấm.
+- **Zone (`configs/zones.yaml`, `cam2_zones.jpg`):** Z2 vùng cấm 2×2 viên trước cửa thoát hiểm; Z3 vùng rủi ro 2×3 viên giữa sảnh; Z1 bắt buộc PPE phần sàn còn lại. Cạnh theo mạch gạch.
+- Toàn bộ test: 179 passed, ruff sạch.

@@ -525,6 +525,7 @@ pytest -q && ruff check src eval tools
 | 2026-10-31 | Khi `association.mode: none`: **eval chấm từng camera riêng** (`run_baselines`/`tune_c2`/`run_sensitivity --per-cam auto`, bỏ B2/B3 và thí nghiệm số cam); **CROWD đếm theo cam thấy nhiều người nhất** trong zone thay vì cộng mọi `global_id` | Không ghép người thì mỗi cam là một hệ thống độc lập; cộng `global_id` giữa các cam đếm trùng một người k lần |
 | 2026-10-31 | **Cam thật:** 2 × Tiandy TC-C131N (1080p H264 25 fps, RTSP `/1/1`, substream `/1/2`) qua Ethernet, `configs/cameras_lan.yaml`; tài khoản cam trong `.env` (`CAM_USER`/`CAM_PASS`), `uri` dùng `${VAR}` và `load_cameras` thế + URL-encode | Không commit mật khẩu; mật khẩu có `@` phải encode trong URL. IP link-local 169.254.x có thể đổi khi cam khởi động lại. Ống kính méo cong rõ: cần xử lý trước homography |
 | 2026-10-31 | **Bài chỉ xử lý từng camera** (người dùng quyết định, bài chủ yếu là detection): C1 = tích lũy theo thời gian có trọng số `v` + UNKNOWN trên từng camera; baseline B0, B1, B4 (bỏ B2/B3, bỏ thí nghiệm số cam); C2 = video 2 cam Tiandy, 11 take; không chạy thêm WILDTRACK; `crowd.K` 4 → 3 (T10 ≥ 4 người phải báo) | Sửa §2, D3, §4, §7.2, §7.5–7.7, §9, §10, §16, §17 cho khớp |
+| 2026-10-31 | **Calibration cam thật bằng sàn gạch caro + mô hình méo ống kính** (`src/geometry/floor_grid.py`, `calibrate_homography.py grid / fit --undistort`): `cam*.yaml` có thêm `K`, `dist`; `to_floor` khử méo rồi mới nhân H. Chỉ fit k1, k2 (f, tâm ảnh cố định). Gạch 0.67 m. **cam1 (hành lang) không có homography**; vùng cấm Z2 / vùng rủi ro Z3 trong khung cam2 (người dùng chọn cam2) | Ống kính Tiandy méo thùng: cam2 LOO 0.156 m → 0.039 m khi khử méo. Một mặt phẳng không tách được f với k1, fit K đầy đủ không ổn định. Hành lang chỉ có một hàng góc gạch thẳng hàng |
 | — | Có Jetson Orin không: `TODO` | |
 
 ---
@@ -545,6 +546,7 @@ pytest -q && ruff check src eval tools
 - Không phân biệt được giày bảo hộ với giày thường ở khoảng cách xa (giới hạn của dataset SH17).
 - Dữ liệu té ngã là té giả, có thể khác té thật.
 - Phát hiện té ngã giả định cam nhìn ngang/chéo. Cam nhìn từ trên xuống thấy rõ nhưng không phân biệt được đứng với nằm (UR Fall cam1); hệ thống không hỗ trợ cam kiểu này.
+- Méo ống kính chỉ ước lượng từ góc gạch trên một mặt sàn (k1, k2; f cố định): ngoài vùng có góc gạch (sát mép ảnh) toạ độ sàn là ngoại suy. cam1 (hành lang) không calib được nên không phát hiện xâm nhập/tụ tập ở cam1.
 - Người bị cắt chân ở mép dưới ảnh (đứng sát cam đặt thấp) có điểm sàn sai khoảng 0.6–0.8 m (đo trên WILDTRACK), ảnh hưởng vùng cấm / vùng rủi ro.
 - Offline backend (Ultralytics) không đạt real-time cho đa luồng (khoảng 16 fps tổng ở 1080p trên RTX 4060 Laptop). DeepStream đạt khoảng 80 fps tổng: real-time 25 fps tối đa 3 cam 1080p trên GPU laptop này (4 cam còn 19.8 fps/cam).
 - Clip bằng chứng live (smart record) là stream gốc của camera, không có OSD (snapshot có overlay vẽ lại từ metadata, lệch tối đa khoảng 1 GOP); chỉ hoạt động với nguồn RTSP.
