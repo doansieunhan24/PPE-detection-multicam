@@ -1,26 +1,26 @@
-# STATUS — cập nhật lần cuối 2026-10-31 (s15)
+# STATUS — cập nhật lần cuối 2026-11-05 (s16)
 
-**Phase hiện tại:** P4 đang làm: **đã quay C2 session 1** (T01–T10, 3 cam). P3 xong cho cam2 + cam3 (calib sàn gạch + khử méo ống kính). **Không ghép người giữa các cam** (người dùng chốt): 3 cam chấm riêng, `association.mode: none`.
+**Phase hiện tại:** P4: **gán nhãn C2 session 1** (T01–T10 đã quay, JSONL detector đủ cả 10 take × 3 cam). P3 xong cho cam2 + cam3. **Không ghép người giữa các cam**: 3 cam chấm riêng, `association.mode: none`.
 
 ## Đã xong
 - P0–P2 (DS + offline), code P5–P7, demo live (s12–s13)
-- (s15) `tools/record_c2.py` ghi RTSP 3 cam; `session_check --sync wallclock` (không cần flash)
-- (s15) Calibration sàn gạch caro + mô hình méo: cam2 LOO 0.039 m, cam3 LOO 0.012 m, chung hệ toạ độ sàn (gạch 0.67 m); cam1 (hành lang) không calib được
-- (s15) Zones thật: Z2 vùng cấm trước cửa thoát hiểm, Z3 vùng rủi ro giữa sảnh, Z1 PPE; `crowd.K` = 2
-- (s15) **Dữ liệu C2 s01**: `data/raw/s01_t01` … `s01_t10` (cam1 hành lang, cam2 + cam3 sảnh, 25 fps, không mất frame), gile phản quang; detector (JSONL) xong cho t01–t03
-- 180 test pass, ruff sạch
+- (s15) `record_c2`, calib sàn gạch + khử méo (cam2 LOO 0.039 m, cam3 0.012 m), zones thật, quay s01 T01–T10
+- (s16) JSONL s01_t01…t10 đủ (khớp số frame `record_meta.json`)
+- (2026-11-02, commit s16) Cột `cams` trong nhãn GT + chấm theo cam (`gt_for_cams`), `docs/c2_labeling_guide.md`, s01 không chấm giày
+- (s16) `tools/label_assist.py`: `ids` (gợi ý gt_id theo màu từ track mẫu), `prefill` (khung nhãn từ `data/annotations/s01_script.yaml`), `timeline` (ảnh 1 frame/giây có Z2/Z3); đặc trưng đã cache cho cả 10 take
+- 189 test pass, ruff sạch (pytest cần `--basetemp` trong scratchpad khi chạy trong sandbox)
 
 ## Đang dở
-- JSONL s01_t04 (dở), s01_t05 (dở), s01_t06–t10 (chưa chạy): tác vụ nền bị dừng vì thiếu RAM → chạy lại **tuần tự**
+- Nhãn s01: `tracks.csv` chưa có `gt_id`, `intervals.csv` trống (template + thumbs + feats đã có)
 
 ## Blocker / chờ người dùng
+- Track mẫu (1 track/người/cam; thêm mẫu cho T06, T07 vì đổi đồ) và vai trong `s01_script.yaml` (ai không đội mũ T02, ai cầm mũ T03, ai cởi gile T06, ai vào Z2 T08, ai nằm T09)
 - s02 tuần sau (giày bảo hộ, đổi vai/đồ, T11)
 
 ## Ưu tiên tiếp theo
-1. Detector cho s01_t04 … t10 (tuần tự): `python -m src.perception_offline.ultralytics_runner --cameras data/raw/s01_tNN/cameras.yaml --out data/jsonl/s01_tNN` (chạy `session_check --sync wallclock` trước cho t05–t10)
+1. Gán nhãn s01 theo `docs/c2_labeling_guide.md` mục 0b: mẫu → `label_assist ids --write` → xem `review_ids_camX.jpg` → `prefill` → điền TODO (timeline) → `convert` + `validate`
 2. Cross-validation theo take trong `eval.run_c2`
-3. Gán nhãn s01 (`tools/label_intervals.py`), ghi chú take trong `process/2026-10-31_s15.md`
-4. Cập nhật `docs/c2_shooting_script.md` theo cách quay thực tế
+3. Cập nhật `docs/c2_shooting_script.md`
 
 ## Session gần nhất
-- [2026-10-31_s15.md](2026-10-31_s15.md) (trước đó: s14, s13, s12)
+- [2026-11-05_s16.md](2026-11-05_s16.md) (trước đó: s15, s14, s13)

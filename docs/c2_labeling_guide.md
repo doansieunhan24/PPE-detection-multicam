@@ -9,6 +9,49 @@ Công cụ: `tools/label_intervals.py`. Chấm điểm: từng camera riêng (CL
 - `thumbs/thumbs_camX_NN.jpg`: mỗi dòng là một track (tên cam + track, khoảng thời gian tính từ đầu take,
   3 ảnh crop: lớn nhất, đầu, cuối).
 
+## 0b. Công cụ hỗ trợ (tự động một phần): `tools/label_assist.py`
+
+Công cụ chỉ **gợi ý**; người gán nhãn xem lại hết rồi mới chấm điểm. Không công cụ nào lấy kết quả
+PPE / vùng / té ngã của hệ thống làm nhãn (tránh chấm vòng tròn).
+
+| Lệnh | Tự động làm gì | Người phải làm |
+|---|---|---|
+| `ids` | Gán `gt_id` cho track theo màu thân áo + quần, lan từ vài track mẫu; hai track cùng cam cùng lúc thì không thể là một người | Gán track mẫu, xem `review_ids_camX.jpg`, sửa dòng sai, điền dòng `review` |
+| `prefill` | Viết `intervals_src.csv` từ kịch bản (`data/annotations/s01_script.yaml`); vi phạm cả take lấy `first_seen`/`last_seen` từ track đã gán | Điền `?` (ai) và `TODO` (thời điểm), sửa `cams` |
+| `timeline` | Ảnh ghép 1 frame/giây, có viền Z2/Z3 (không vẽ kết quả detector) | Đọc thời điểm bắt đầu / kết thúc |
+
+Thứ tự cho cả session:
+
+```bash
+# 1) track mẫu: trong tracks.csv của 1 take có đủ 3 người (vd. s01_t10), điền gt_id cho 1 track
+#    dài, rõ của mỗi người ở mỗi cam (cam1 lấy ở take khác nếu cần); để trống cột status
+python tools/label_assist.py ids --jsonl data/jsonl/s01_t* --ann-root data/annotations          # chạy thử
+python tools/label_assist.py ids --jsonl data/jsonl/s01_t* --ann-root data/annotations --write  # ghi tracks.csv
+# 2) xem data/annotations/s01_tNN/review_ids_camX.jpg (track xếp theo người, dòng đỏ = review)
+#    sửa dòng sai: đổi gt_id và ghi status = fixed (thành track mẫu); chạy lại ids --write
+# 3) điền ai làm gì vào data/annotations/s01_script.yaml rồi
+python tools/label_assist.py prefill --spec data/annotations/s01_script.yaml     --jsonl data/jsonl/s01_t* --ann-root data/annotations --ref cam2
+# 4) take có TODO: ảnh timeline để đọc thời điểm
+python tools/label_assist.py timeline --jsonl data/jsonl/s01_t08     --out data/annotations/s01_t08/timeline --cams cam2 cam3
+# 5) điền TODO trong intervals_src.csv → convert + validate (mục 5)
+```
+
+Cột `status` trong `tracks.csv` sau `ids --write`:
+
+| status | Ý nghĩa | `gt_id` |
+|---|---|---|
+| (trống) / `fixed` | Người gán (track mẫu) | giữ nguyên |
+| `auto` | Gợi ý tin cậy (độ giống ≥ 0.55, cách người thứ hai ≥ 0.05, không trùng thời gian) | đã điền, vẫn phải xem ảnh |
+| `review` | Không chắc (đổi đồ, bị che, trùng thời gian) | trống, đoán ở cột `suggest` |
+| `nomatch` | Không giống ai (phản chiếu kính, tủ điện…) | trống |
+| `short` / `nofeat` | < 5 frame / không cắt được thân | trống |
+
+- Take có người **đổi đồ** (T06 cởi gile, T07 mũ xe máy + áo khoác): thêm 1 track mẫu của người đó
+  **ngay trong take đó** (công cụ ưu tiên mẫu cùng take + cùng cam).
+- `tracks.csv.bak` là bản trước lần `--write` đầu tiên.
+- Gán nhầm `gt_id` không làm lệch so sánh giữa các phương pháp (B0, B1, B4, P dùng chung mapping)
+  nhưng làm sai số tuyệt đối, nên vẫn phải xem hết ảnh review.
+
 ## 1. Quy ước người
 
 Dùng **một mã cố định cho cả session**: `P1` = A, `P2` = B, `P3` = C (theo vai trong kịch bản).
@@ -21,7 +64,9 @@ Mở `tracks.csv` (Excel / VS Code), xem ảnh thumbs, điền số `1`, `2`, `3
 - Một người bị tách thành nhiều track (mất track rồi có ID mới): **các track đó cùng `gt_id`**.
 - Track sai (không phải người: poster, bóng, phản chiếu kính): **để trống**.
 - Track bị đổi người giữa chừng (ID swap): lấy người chiếm phần lớn thời gian của track, ghi chú lại.
-- Track ngắn (< 1 s) khó nhìn: có thể để trống, ảnh hưởng không đáng kể.
+- Track ngắn (< 1 s) khó nhìn: có thể để trống. Lưu ý: mọi alert không khớp GT đều là báo sai, nên
+  nếu alert **duy nhất** của một người vi phạm rơi vào track ngắn bị để trống thì một TP thành FP + FN
+  (hay gặp ở B0, báo theo từng frame). Gán được thì nên gán (`ids` gợi ý cho track ≥ 5 frame).
 
 ## 3. Bước 2: viết `intervals_src.csv`
 

@@ -89,11 +89,18 @@ def convert_rows(
     """Source rows (clock times) → intervals.csv rows (ts_ms = t0 + clock − anchor)."""
     out: list[list[str | int]] = []
     for i, r in enumerate(rows, 2):
-        a = t0_ms + parse_clock_ms(r["start"]) - anchor_ms
-        b = t0_ms + parse_clock_ms(r["end"]) - anchor_ms
+        try:
+            a = t0_ms + parse_clock_ms(r["start"]) - anchor_ms
+            b = t0_ms + parse_clock_ms(r["end"]) - anchor_ms
+            gt_id = parse_gt_id(r["gt_id"])
+        except ValueError:
+            raise SystemExit(
+                f"row {i}: fill gt_id/start/end (got {r['gt_id']!r}, {r['start']!r}, "
+                f"{r['end']!r}; TODO and '?' come from label_assist.py prefill)"
+            ) from None
         if b <= a:
             raise SystemExit(f"row {i}: end {r['end']} not after start {r['start']}")
-        gt_id, typ = parse_gt_id(r["gt_id"]), r["type"].strip()
+        typ = r["type"].strip()
         if (gt_id == "") != (typ in PERSONLESS_TYPES):
             raise SystemExit(f"row {i}: gt_id must be empty exactly for {sorted(PERSONLESS_TYPES)}")
         cams = " ".join(sorted(parse_cams(r.get("cams"))))

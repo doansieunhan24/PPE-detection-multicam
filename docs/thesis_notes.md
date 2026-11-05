@@ -67,3 +67,8 @@
 - Tune ngưỡng **cho từng phương pháp** trên session val bằng cùng một thủ tục (coordinate descent, cùng mục tiêu F1), báo cáo trên session test. Nhờ vậy baseline không bị thiệt vì dùng ngưỡng mặc định (§14.6). Có thêm bảng "chưa tune" để thấy tác động của việc tune.
 - Hiệu chỉnh p và v_learned có thể fit lại trên C2 val: đa góc nhìn cho phép cùng một người (GT cố định) được quan sát với visibility khác nhau. Ảnh đơn không làm được điều này (GT bị điều kiện theo visibility, xem 2026-10-22).
 - Số camera 1/2/3: lấy trung bình trên mọi tập con cùng kích thước (không chọn cam tốt nhất).
+
+## Gán nhãn C2 bán tự động (2026-11-05, `tools/label_assist.py`)
+- Phần tự động chỉ liên kết track với người diễn (màu gile/quần + ràng buộc: hai track cùng cam cùng lúc là hai người khác nhau) và điền sẵn nhãn từ kịch bản quay. Nhãn PPE / vùng cấm / tụ tập / bất động **không** lấy từ output của hệ thống, nên việc chấm không bị vòng tròn. Nên viết rõ điểm này trong phần xây dựng bộ dữ liệu.
+- Mapping track → người dùng chung cho B0, B1, B4, P, nên lỗi mapping (nếu có) không làm lệch phép so sánh giữa các phương pháp. Mọi gợi ý đều được người xem lại.
+- Hạn chế: so màu không dùng được khi người diễn đổi đồ giữa take (T06, T07); những take đó cần track mẫu riêng.
