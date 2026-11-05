@@ -33,6 +33,7 @@ from pathlib import Path
 from eval.metrics import (
     association_metrics,
     event_metrics,
+    gt_for_cams,
     load_gt_csv,
     majority_gid_to_gt,
     unknown_fraction,
@@ -118,7 +119,7 @@ def evaluate(run_dir: Path, gt_dir: Path, delta_ms: int, association: bool = Fal
     alerts = _read_jsonl(run_dir / "alerts.jsonl", AlertEvent)
     states = _read_jsonl(run_dir / "states.jsonl", PersonPartState)
     summary = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
-    gt = load_gt_csv(gt_dir / "intervals.csv")
+    gt = gt_for_cams(load_gt_csv(gt_dir / "intervals.csv"), summary.get("cams", []))
     mapping = gid_to_gt(run_dir, gt_dir / "tracks.csv")
     dur = summary["duration_s"]
     m = event_metrics(alerts, gt, mapping, dur, delta_ms, types=PPE_TYPES)

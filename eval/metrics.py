@@ -24,6 +24,19 @@ class GTInterval:
     type: str  # AlertType value, e.g. PPE_HELMET
     t_start_ms: int
     t_end_ms: int
+    cams: frozenset[str] = frozenset()  # cameras that can see the event; empty = all
+
+
+def parse_cams(text: str | None) -> frozenset[str]:
+    """'cam2;cam3' | 'cam2 cam3' | '' → cameras of a GT interval (empty = every camera)."""
+    return frozenset((text or "").replace(";", " ").replace("|", " ").split())
+
+
+def gt_for_cams(gt: Iterable[GTInterval], cams: Iterable[str]) -> list[GTInterval]:
+    """GT intervals a run on `cams` can be scored on (§10.2, per-camera scoring): an event
+    labelled for other cameras only is not a miss of this one."""
+    run = set(cams)
+    return [g for g in gt if not g.cams or g.cams & run]
 
 
 @dataclass(frozen=True)
@@ -44,7 +57,7 @@ class EventMetrics:
 
 
 def load_gt_csv(path: str | Path) -> list[GTInterval]:
-    """CSV columns: gt_id,type,t_start_ms,t_end_ms (written by tools/label_intervals.py)."""
+    """CSV columns: gt_id,type,t_start_ms,t_end_ms[,note][,cams] (tools/label_intervals.py)."""
     with open(path, encoding="utf-8", newline="") as f:
         return [
             GTInterval(
@@ -52,6 +65,7 @@ def load_gt_csv(path: str | Path) -> list[GTInterval]:
                 r["type"],
                 int(r["t_start_ms"]),
                 int(r["t_end_ms"]),
+                parse_cams(r.get("cams")),
             )
             for r in csv.DictReader(f)
         ]

@@ -531,6 +531,8 @@ pytest -q && ruff check src eval tools
 | 2026-10-31 | **Thêm cam3 trong sảnh** (lệch ~46° với cam2), calib cùng lưới gạch; cam1 giữ ở hành lang. **Không quay lại ghép người đa camera** (người dùng chốt): giữ `association.mode: none`, cam3 là camera độc lập thứ ba, chấm riêng như cam1/cam2; bỏ các take fusion F1–F6 | Bài tập trung vào detection từng camera (giữ quyết định s14) |
 | 2026-10-31 | T09 không té ngã thật: IMMOBILE đánh giá bằng ngồi/nằm xuống từ từ + đứng yên; té ngã giữ số liệu UR Fall/MCFD | Người dùng bỏ té ngã (an toàn) |
 | 2026-10-31 | **s01 đánh giá bằng cross-validation theo take** (tune trên các take khác, test trên take còn lại); s02 quay sau (giày bảo hộ, đổi vai/đồ, F1–F6) | Chưa có session test riêng; chia theo take đơn lẻ làm mất loại tình huống ở test |
+| 2026-11-02 | **Nhãn GT có cột `cams`** (camera có người/sự kiện trong khung, kể cả bị che; trống = mọi cam); chấm từng camera chỉ tính interval có cam đó (`eval.metrics.gt_for_cams`). Hướng dẫn gán nhãn: `docs/c2_labeling_guide.md` | Không có cột này thì sự kiện ngoài khung của một cam (vd. vùng cấm trong sảnh với cam1 hành lang) bị tính FN cho cam đó. Ghi tay thay vì lọc theo track để lỗi bỏ sót của detector không bị giấu |
+| 2026-11-02 | **s01 không chấm giày:** `data/jsonl/s01_tNN/zones.yaml` bỏ `boots` khỏi Z2 (người dùng chốt); `PPE_BOOTS` chấm từ s02 | s01 không ai mang giày bảo hộ; detector cũng không phân biệt giày bảo hộ với giày thường |
 | — | Có Jetson Orin không: `TODO` | |
 
 ---

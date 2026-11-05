@@ -15,7 +15,9 @@ Workflow per session:
        python tools/label_intervals.py validate --jsonl data/jsonl/s01 --ann data/annotations/s01
 
 Shortcut for intervals.csv: write intervals_src.csv by hand with clock times instead of ts_ms,
-    gt_id,type,start,end,note      e.g.  P1,PPE_HELMET,1:02.5,1:31,V1
+    gt_id,type,start,end,note,cams      e.g.  P1,PPE_HELMET,1:02.5,1:31,V1,cam2;cam3
+`cams` (optional) = cameras that can see the event; empty = all. Per-camera scoring (§10.2)
+only counts an interval for these cameras, so an event out of a camera's view is not its miss.
 then convert (P1 → gt_id 1):
     # times read off the reference camera's video player
     python tools/label_intervals.py convert --jsonl data/jsonl/s01 --src .../intervals_src.csv \\
@@ -36,12 +38,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from eval.metrics import PERSONLESS_TYPES  # noqa: E402
+from eval.metrics import PERSONLESS_TYPES, parse_cams  # noqa: E402
 from src.common.jsonl import read_frames  # noqa: E402
 from src.common.schemas import AlertType  # noqa: E402
 
 TRACK_COLS = ["cam_id", "track_id", "first_ms", "last_ms", "n_frames", "gt_id"]
-INTERVAL_COLS = ["gt_id", "type", "t_start_ms", "t_end_ms", "note"]
+INTERVAL_COLS = ["gt_id", "type", "t_start_ms", "t_end_ms", "note", "cams"]
 
 
 def track_spans(jsonl_dir: Path) -> dict[tuple[str, int], list[int]]:
@@ -94,7 +96,8 @@ def convert_rows(
         gt_id, typ = parse_gt_id(r["gt_id"]), r["type"].strip()
         if (gt_id == "") != (typ in PERSONLESS_TYPES):
             raise SystemExit(f"row {i}: gt_id must be empty exactly for {sorted(PERSONLESS_TYPES)}")
-        out.append([gt_id, typ, a, b, r.get("note") or ""])
+        cams = " ".join(sorted(parse_cams(r.get("cams"))))
+        out.append([gt_id, typ, a, b, r.get("note") or "", cams])
     return out
 
 
@@ -230,6 +233,7 @@ def cmd_validate(args: argparse.Namespace) -> None:
     unlabeled = sum(1 for r in rows if not r["gt_id"].strip())
     t_min = min(s[0] for s in spans.values()) if spans else 0
     t_max = max(s[1] for s in spans.values()) if spans else 0
+    session_cams = {p.stem for p in Path(args.jsonl).glob("*.jsonl")}
     valid_types = {t.value for t in AlertType} - {"UNVERIFIABLE"}
     with open(ann / "intervals.csv", encoding="utf-8", newline="") as f:
         intervals = list(csv.DictReader(f))
@@ -241,6 +245,8 @@ def cmd_validate(args: argparse.Namespace) -> None:
             errors.append(f"intervals.csv:{i}: gt_id {r['gt_id']!r} has no track")
         if r["type"] not in valid_types:
             errors.append(f"intervals.csv:{i}: bad type {r['type']}")
+        if unknown := parse_cams(r.get("cams")) - session_cams:
+            errors.append(f"intervals.csv:{i}: cams {sorted(unknown)} not in JSONL")
         a, b = int(r["t_start_ms"]), int(r["t_end_ms"])
         if not (t_min <= a < b <= t_max):
             errors.append(f"intervals.csv:{i}: [{a},{b}] outside session [{t_min},{t_max}]")

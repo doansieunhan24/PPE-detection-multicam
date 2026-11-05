@@ -23,11 +23,12 @@ def test_parse_gt_id():
 
 def test_convert_rows_video_and_wall():
     rows = [{"gt_id": "P1", "type": "PPE_HELMET", "start": "1:02", "end": "1:31", "note": "V1"}]
-    assert convert_rows(rows, t0_ms=500) == [[1, "PPE_HELMET", 62500, 91500, "V1"]]
+    assert convert_rows(rows, t0_ms=500) == [[1, "PPE_HELMET", 62500, 91500, "V1", ""]]
     wall = [{"gt_id": "P1", "type": "INTRUSION", "start": "14:03:30", "end": "14:03:35"}]
     anchor = parse_clock_ms("14:03:20")
     # sync event at ref media time 7 s, ref first frame ts 0 → 10 s after it = 17 s
-    assert convert_rows(wall, t0_ms=7000, anchor_ms=anchor) == [[1, "INTRUSION", 17000, 22000, ""]]
+    want = [[1, "INTRUSION", 17000, 22000, "", ""]]
+    assert convert_rows(wall, t0_ms=7000, anchor_ms=anchor) == want
     with pytest.raises(SystemExit):
         convert_rows([{"gt_id": "1", "type": "FALL", "start": "5", "end": "5"}], 0)
 
@@ -77,3 +78,22 @@ def test_convert_cli_wall_clock_then_validate(tmp_path):
         encoding="utf-8",
     )
     main(["validate", "--jsonl", str(jd), "--ann", str(ann)])
+
+
+def test_convert_and_validate_cams(tmp_path):
+    rows = [{"gt_id": "P1", "type": "INTRUSION", "start": "1", "end": "2", "cams": "cam3;cam2"}]
+    assert convert_rows(rows, t0_ms=0)[0][-1] == "cam2 cam3"
+    jd, ann = tmp_path / "jsonl", tmp_path / "ann"
+    jd.mkdir()
+    ann.mkdir()
+    _jsonl(jd / "cam1.jsonl", "cam1", 1000)
+    (ann / "tracks.csv").write_text(
+        "cam_id,track_id,first_ms,last_ms,n_frames,gt_id\ncam1,1,1000,4960,100,1\n",
+        encoding="utf-8",
+    )
+    iv = "gt_id,type,t_start_ms,t_end_ms,note,cams\n1,PPE_VEST,2000,3000,,{}\n"
+    (ann / "intervals.csv").write_text(iv.format("cam1"), encoding="utf-8")
+    main(["validate", "--jsonl", str(jd), "--ann", str(ann)])
+    (ann / "intervals.csv").write_text(iv.format("cam9"), encoding="utf-8")
+    with pytest.raises(SystemExit):
+        main(["validate", "--jsonl", str(jd), "--ann", str(ann)])

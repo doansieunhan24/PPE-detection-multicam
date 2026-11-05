@@ -96,3 +96,19 @@ def test_association_metrics():
     assert (m["pair_tp"], m["pair_fp"], m["pair_fn"]) == (3, 1, 1)
     assert m["count_mae"] == pytest.approx(2 / 3)  # t=40: 3 gids vs 2 gts; t=80: 1 vs 2
     assert m["frag"] == pytest.approx(2.0)  # gt 1 → {10, 12}, gt 2 → {11, 10}
+
+
+def test_gt_cams_column_and_filter(tmp_path):
+    from eval.metrics import gt_for_cams
+
+    p = tmp_path / "gt.csv"
+    p.write_text(
+        "gt_id,type,t_start_ms,t_end_ms,note,cams\n1,INTRUSION,0,1000,,cam2 cam3\n"
+        "1,PPE_HELMET,0,1000,,\n",
+        encoding="utf-8",
+    )
+    gt = load_gt_csv(p)
+    assert gt[0].cams == frozenset({"cam2", "cam3"}) and gt[1].cams == frozenset()
+    # cam1 cannot see the intrusion: only the all-camera interval is scored for it
+    assert gt_for_cams(gt, ["cam1"]) == [gt[1]]
+    assert gt_for_cams(gt, ["cam3"]) == gt
