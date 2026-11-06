@@ -8,10 +8,10 @@
 - (s17) `eval.run_c2 --cv [--cv-refit]`; `fp_duplicate`; `eval/ppe_rate_c2.py`, `eval/per_take_c2.py`; `evidence.theta_neg_part` (tuỳ chọn, mặc định tắt)
 - (s17) Kết quả CV refit: F1 B4 0.393 > B1 0.343 > P 0.255; báo sai không lặp P 1 / B4 14 / B1 20; TTD P 7.2 s; P tắt gile (0/6)
 - (s17) Thử θ_neg riêng theo bộ phận (`--space per_part`): **âm tính** (held-out F1 0.222, gile vẫn 0/6) → giữ θ_neg chung
+- (s17) Nối track trong cam (`tracking.stitch_gap_ms`, tắt mặc định): CV refit + nối 1.5 s → F1 P 0.333 ≈ B1 0.343 / B4 0.338, báo sai không lặp P 1 / 20 / 20; nối đúng người 0.907
 - (s17) Báo cáo Claude Docs https://claude.ai/artifact/6Vbx6PvUKNWgqPQ7cYEDXT ; slide `eval/reports/c2_s01/bao_cao_tien_do_2026-11-06.pptx` (`tools/report/build_deck.py`)
 
 ## Đang dở
-- CV có nối track (`--set tracking.stitch_gap_ms=1500`) — `eval/reports/c2_s01_refit_stitch` (chạy nền)
 
 ## Blocker / chờ người dùng
 - Gile xanh dương: chấp nhận là hạn chế, hay đổi gile cho s02 / bổ sung dữ liệu gile xanh cho detector (không dùng C2)?
@@ -19,7 +19,7 @@
 
 ## Ưu tiên tiếp theo
 1. Quay + gán nhãn s02, `configs/c2_split.yaml` val s01_t* / test s02_t*
-2. Đọc kết quả CV nối track, cập nhật báo cáo nếu đáng kể
+2. Trên s02: so P có / không nối track trước khi bật mặc định
 3. Quay s02, chạy `eval.run_c2` val s01 → test s02
 
 ## Session gần nhất

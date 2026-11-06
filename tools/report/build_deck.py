@@ -1070,6 +1070,30 @@ tb(
 )
 footer(s, 12)
 
+# 12b stitching ----------------------------------------------------------------------------
+_st = R / "c2_s01_refit_stitch" / "cv" / "pooled" / "results.json"
+if _st.exists():
+    st_res = load(_st)["results"]
+    STND = {m: st_res[m]["fp"] - st_res[m].get("fp_duplicate", 0) for m in st_res}
+    STP = next(r["join_precision"] for r in load(R / "c2_s01" / "stitch" / "results.json")["rows"]
+               if r["gap_ms"] == 1500)
+    s = prs.slides.add_slide(BLANK)
+    title(s, f"Thử nối track trong cùng cam: F1 của P lên {st_res['P']['f1']:.2f}, ngang baseline",
+          "Tuỳ chọn tracking.stitch_gap_ms = 1.5 s cho mọi phương pháp, chạy lại toàn bộ cross-validation")
+    cats = ["B1", "B4", "P"]
+    bar(s, 0.6, 1.75, 6.0, 4.3, cats, [("Không nối", [res[m]["f1"] for m in cats]),
+                                         ("Có nối", [st_res[m]["f1"] for m in cats])],
+        [GREY, TEAL], "F1 sự kiện", legend=True, ymax=1.0)
+    bar(s, 6.9, 1.75, 5.8, 4.3, cats, [("Không nối", [ND[m] for m in cats]),
+                                         ("Có nối", [STND[m] for m in cats])],
+        [GREY, TEAL], "Báo sai không lặp", fmt='0', legend=True)
+    tb(s, 0.6, 6.15, 12.1, 0.7, [
+        f"Mũ bắt đúng của P: {H['P']['tp']} → {st_res['P']['per_type']['PPE_HELMET']['tp']}; "
+        f"gile vẫn {st_res['P']['per_type']['PPE_VEST']['tp']}/{st_res['P']['per_type']['PPE_VEST']['n_gt']}. "
+        f"Nối đúng người {STP * 100:.0f}% (eval/stitch_c2.py, 1.5 s); cần kiểm lại trên s02 trước khi bật mặc định."],
+        size=13, color=MUTED)
+    footer(s, 0)
+
 # 13 error analysis -------------------------------------------------------------------------
 s = prs.slides.add_slide(BLANK)
 title(
