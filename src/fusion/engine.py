@@ -72,7 +72,7 @@ class PPEEngine:
         # v_learned only changes visibility; the policy must not receive it
         self.ablation = {k: v for k, v in self.ablation.items() if k != "v_learned"}
         self.parts = {PartName(k): v for k, v in f["parts"].items()}
-        self.assoc = Associator.from_config(self.zones_cfg, self.calibs)
+        self.assoc = Associator.from_config(self.zones_cfg, self.calibs, f.get("tracking"))
         self.zones = [
             Zone(z["id"], z["type"], [tuple(p) for p in z["polygon_m"]], z.get("required_ppe", []))
             for z in self.zones_cfg.get("zones", [])
@@ -95,7 +95,9 @@ class PPEEngine:
     def _policy(self, gid: int, part: PartName) -> Policy:
         key = (gid, part)
         if key not in self.policies:
-            self.policies[key] = make_policy(self.policy_id, self.fusion_cfg, **self.ablation)
+            self.policies[key] = make_policy(
+                self.policy_id, self.fusion_cfg, part=getattr(part, "value", part), **self.ablation
+            )
         return self.policies[key]
 
     # --- main ---------------------------------------------------------------------------

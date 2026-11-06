@@ -29,3 +29,26 @@
 | T09 | `FALL` lúc té, `IMMOBILE` lúc nằm bất động |
 | T10 | `CROWD` theo zone (để trống `gt_id`) |
 | T11 | Theo phiếu ghi giờ |
+
+## s01 (quay 2026-10-31): thực tế so với kịch bản
+
+Vai: A = gile xanh dương (P1), B = gile cam (P2), C = gile xanh nõn chuối (P3). Nhãn ở
+`data/annotations/s01_tNN/` (gán 2026-11-06, `process/2026-11-06_s17.md`).
+
+| Take | Thực tế | Nhãn |
+|---|---|---|
+| T01 | A, B (không có C) | — |
+| T02 | B không đội mũ cả take | `PPE_HELMET` P2 23.1–99.5 s |
+| T03 | A tháo / đội mũ **7 lần** | 7 dòng `PPE_HELMET` P1 |
+| T04 | A, B; ghế xanh che thân | — |
+| T05 | A, B, C ở xa | — |
+| T06 | A cởi gile lúc ~27 s, để trên ghế | `PPE_VEST` P1 27–93.1 s |
+| T07 | A mũ xe máy đen + áo khoác xanh (không có giày thể thao riêng; s01 không chấm giày) | `PPE_HELMET`, `PPE_VEST` P1 cả take |
+| T08 | A vào Z2 **5 lần** (lần 2, 5 không chắc) | 5 dòng `INTRUSION` P1 |
+| T09 | Không té (an toàn): A ngồi xổm 28–36 s, nằm 51–62 s; lúc nằm chỉ chân trong Z3 | `IMMOBILE` P1 51–62 s |
+| T10 | 3 người đứng cạnh Z3, chỉ A trong Z3 | — (không phải CROWD theo vùng) |
+| T11 | Chưa quay | — |
+
+**Cho s02:** dán băng keo viền Z2 / Z3 trên sàn để diễn viên đứng hẳn trong vùng (T09, T10);
+gile cùng màu với dữ liệu train hoặc ghi rõ màu (detector bắt gile xanh dương kém, xem
+`docs/experiments.md` 2026-11-06); giày bảo hộ; T11.

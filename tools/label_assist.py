@@ -18,19 +18,23 @@ INTRUSION / CROWD / IMMOBILE times are never derived from the system's floor pos
         --out data/annotations/s01_t08/timeline --cams cam2 cam3
 
 `ids` seeds: in tracks.csv of any take of the session, fill gt_id of one long, clear track per
-person and camera (status empty). Rows written by `ids` carry status auto / review / short /
-nofeat / nomatch and are re-suggested on every run; to correct one, fix gt_id and set status to
-`fixed` (it then counts as a seed). Only `auto` rows get a gt_id; `review` rows keep it empty
-with the guess in `suggest`; `nomatch` = like no actor (reflection, cabinet), listed last on
-the sheet. A take where someone changed clothes needs its own seed for that person (same take +
-camera seeds are preferred). Check review_ids_<cam>.jpg (tracks grouped by person) before
-scoring.
+person and camera (status empty); only these rows are seeds. Rows written by `ids` carry status
+auto / review / short / nofeat / nomatch and are re-suggested on every run. To correct one, fix
+gt_id and set status to `fixed`: kept as is, not a seed (corrections are mostly close-ups or
+partial bodies, poor colour models); `fixed` with an empty gt_id = checked, no actor. A track
+whose identity switches mid-way (ID swap): the person of each stretch on its own row (same
+cam_id, track_id; first_ms / last_ms = the stretch) with status `swap`. `accept` freezes a
+checked take (auto -> ok). Only `auto` rows get a gt_id; `review` rows keep it empty with the
+guess in `suggest`; `nomatch` = like no actor (reflection, cabinet), listed last on the sheet. A
+take where someone changed clothes needs its own seed for that person (same take + camera seeds
+are preferred). Check review_ids_<cam>.jpg (tracks grouped by person) before scoring.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import math
 import shutil
 import sys
 from collections.abc import Iterable, Sequence
@@ -48,6 +52,8 @@ from tools.label_intervals import TRACK_COLS  # noqa: E402
 TORSO_KPTS = (5, 6, 11, 12)  # COCO shoulders, hips
 LEG_KPTS = (11, 12, 15, 16)  # hips, ankles
 AUTO_STATUSES = {"auto", "review", "short", "nofeat", "nomatch"}
+MANUAL_SKIP = "swap"  # labelled by hand, kept out of seeds and suggestions
+ACCEPTED = "ok"  # auto row checked by a person (`accept`): kept, not re-suggested, not a seed
 EXTRA_COLS = ["suggest", "sim", "margin", "status"]
 H_BINS, S_BINS, V_BINS = 16, 4, 4
 
@@ -344,6 +350,7 @@ def cmd_ids(args: argparse.Namespace) -> None:
     spans: dict[TrackKey, tuple[int, int, int]] = {}
     seeds: dict[TrackKey, int] = {}
     tables: dict[str, list[dict[str, str]]] = {}
+    skip: dict[TrackKey, tuple[int | None, str]] = {}  # hand-labelled, not seeds
     for jd in map(Path, args.jsonl):
         take, ann = jd.name, Path(args.ann_root) / jd.name
         if not (ann / "tracks.csv").exists():
@@ -351,9 +358,19 @@ def cmd_ids(args: argparse.Namespace) -> None:
         rows = tables[take] = _read_tracks(ann / "tracks.csv")
         for r in rows:
             key = (take, r["cam_id"], int(r["track_id"]))
-            spans[key] = (int(r["first_ms"]), int(r["last_ms"]), int(r["n_frames"]))
-            if r["gt_id"].strip() and r.get("status", "").strip() not in AUTO_STATUSES:
-                seeds[key] = int(r["gt_id"])
+            a, b, n = int(r["first_ms"]), int(r["last_ms"]), int(r["n_frames"])
+            if key in spans:  # split rows of an ID-swap track: the whole track
+                a0, b0, n0 = spans[key]
+                a, b, n = min(a, a0), max(b, b0), n + n0
+            spans[key] = (a, b, n)
+            status = r.get("status", "").strip()
+            gt = int(r["gt_id"]) if r["gt_id"].strip() else None
+            if status in (MANUAL_SKIP, ACCEPTED, "fixed"):
+                # corrections are mostly hard tracks (close-ups, partial bodies): poor colour
+                # models, so they keep their label but are not seeds
+                skip[key] = (gt, status)
+            elif gt is not None and status not in AUTO_STATUSES:
+                seeds[key] = gt
         videos = _session_videos(jd)
         (ann / "feats").mkdir(parents=True, exist_ok=True)
         for jp in sorted(jd.glob("*.jsonl")):
@@ -368,6 +385,8 @@ def cmd_ids(args: argparse.Namespace) -> None:
                 f, th = extract_cam_feats(videos[cam], jp, k=args.samples)
                 save_feats(cache, f, th)
             for tid, v in f.items():
+                if (take, cam, tid) in skip:
+                    continue
                 feats[(take, cam, tid)] = v
                 thumbs[(take, cam, tid)] = th.get(tid, [])
     missing = sorted({k[1] for k in feats} - {k[1] for k in seeds})
@@ -405,7 +424,9 @@ def cmd_ids(args: argparse.Namespace) -> None:
                         r["status"] = s.status
                     w.writerow(r)
         for cam in sorted({k[1] for k in spans if k[0] == take}):
-            _review_sheet(ann / f"review_ids_{cam}.jpg", take, cam, spans, seeds, sug, thumbs)
+            _review_sheet(
+                ann / f"review_ids_{cam}.jpg", take, cam, spans, seeds, sug, thumbs, skip
+            )
     for s in sug.values():
         counts[s.status] = counts.get(s.status, 0) + 1
     print(f"seeds {len(seeds)}, suggestions {dict(sorted(counts.items()))}")
@@ -421,6 +442,7 @@ def _review_sheet(
     seeds: dict[TrackKey, int],
     sug: dict[TrackKey, Suggestion],
     thumbs: dict[TrackKey, list[np.ndarray]],
+    swaps: dict[TrackKey, tuple[int | None, str]] | None = None,
     h: int = 96,
 ) -> None:
     """Tracks grouped by (suggested) person: a wrong one stands out by its colours."""
@@ -431,9 +453,13 @@ def _review_sheet(
         return
     t0 = min(spans[k][0] for k in spans if k[0] == take)
 
+    swaps = swaps or {}
+
     def group(k: TrackKey) -> str:
         if k in seeds:
             return f"P{seeds[k]}"
+        if k in swaps:
+            return "~" if swaps[k][0] is None else f"P{swaps[k][0]}"
         s = sug.get(k)
         if s is None or s.status in ("short", "nofeat", "nomatch") or s.gt is None:
             return "~"
@@ -442,7 +468,7 @@ def _review_sheet(
     rows = []
     for k in sorted(keys, key=lambda k: (group(k).lstrip("?"), group(k), spans[k][0])):
         s = sug.get(k)
-        tag = "seed" if k in seeds else (s.status if s else "")
+        tag = "seed" if k in seeds else swaps[k][1] if k in swaps else (s.status if s else "")
         if tag == "short":
             continue
         info = np.full((h, 330, 3), 255, np.uint8)
@@ -485,7 +511,10 @@ def resolve_spec_rows(
                     v = "TODO"
                 else:
                     ms = person_spans[gid][0 if v == "first_seen" else 1] - ref_t0_ms
-                    v = f"{max(ms, 0) / 1000:.1f}"
+                    # first_seen rounds up, last_seen down: stays inside the session
+                    t = max(ms, 0) / 100
+                    t = math.ceil(t) if v == "first_seen" else math.floor(t)
+                    v = f"{t / 10:.1f}"
             times.append(v)
         out.append(
             {
@@ -571,6 +600,17 @@ def cmd_timeline(args: argparse.Namespace) -> None:
     for cam in args.cams:
         cfg = cams[cam]
         overlay = _zone_overlay(cfg, zones)
+        crop = None
+        if args.crop_zone:
+            hit = [pts for pts, _, zid in overlay if zid == args.crop_zone]
+            if not hit:
+                print(f"{cam}: zone {args.crop_zone} not drawable (no calibration?), skipped")
+                continue
+            x0, y0 = hit[0].min(axis=0)
+            x1, y1 = hit[0].max(axis=0)
+            w, h = x1 - x0, y1 - y0
+            # room for a standing person above the zone, whose feet decide in / out
+            crop = (int(x0 - 0.4 * w), int(y0 - 2.5 * h), int(x1 + 0.4 * w), int(y1 + 0.4 * h))
         cap = cv2.VideoCapture(cfg["uri"])
         fps = cap.get(cv2.CAP_PROP_FPS) or cfg.get("fps", 25)
         every = max(1, round(fps * args.step))
@@ -584,10 +624,16 @@ def cmd_timeline(args: argparse.Namespace) -> None:
             ok, img = cap.read()
             if not ok:
                 break
+            if fi / fps < args.t0 or (args.t1 is not None and fi / fps > args.t1):
+                fi += 1
+                continue
             for pts, color, zid in overlay:
                 cv2.polylines(img, [pts], True, color, 4, cv2.LINE_AA)
                 cx, cy = pts.mean(axis=0).astype(int)
                 cv2.putText(img, zid, (cx - 20, cy), cv2.FONT_HERSHEY_SIMPLEX, 1.4, color, 3)
+            if crop is not None:
+                H, W = img.shape[:2]
+                img = img[max(crop[1], 0) : min(crop[3], H), max(crop[0], 0) : min(crop[2], W)]
             small = cv2.resize(img, (args.width, int(img.shape[0] * args.width / img.shape[1])))
             label = f"{cam} {fi / fps:.0f}s"
             for color, th in (((0, 0, 0), 5), ((255, 255, 255), 2)):
@@ -604,6 +650,24 @@ def cmd_timeline(args: argparse.Namespace) -> None:
             )
             cv2.imwrite(str(out / f"{cam}_{page // per + 1:02d}.jpg"), grid)
         print(f"{cam}: {len(tiles)} frames every {args.step:g} s -> {out}/{cam}_*.jpg")
+
+
+def cmd_accept(args: argparse.Namespace) -> None:
+    """Freeze checked takes: their `auto` rows become `ok` and are no longer re-suggested."""
+    for d in map(Path, args.ann):
+        path = d / "tracks.csv"
+        rows = _read_tracks(path)
+        n = 0
+        for r in rows:
+            if r.get("status", "").strip() == "auto":
+                r["status"], n = ACCEPTED, n + 1
+        left = sum(1 for r in rows if r.get("status", "").strip() == "review")
+        with open(path, "w", encoding="utf-8", newline="") as fo:
+            w = csv.DictWriter(fo, TRACK_COLS + EXTRA_COLS, extrasaction="ignore")
+            w.writeheader()
+            w.writerows(rows)
+        warn = f"; WARNING {left} review rows left" if left else ""
+        print(f"{d.name}: {n} auto -> {ACCEPTED}{warn}")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -635,8 +699,14 @@ def main(argv: list[str] | None = None) -> None:
     t.add_argument("--width", type=int, default=480)
     t.add_argument("--cols", type=int, default=6)
     t.add_argument("--rows", type=int, default=8)
+    t.add_argument("--crop-zone", help="zone id (e.g. Z2): zoom on that zone, feet in / out")
+    t.add_argument("--t0", type=float, default=0.0, help="first second to show")
+    t.add_argument("--t1", type=float, default=None, help="last second to show")
+    a = sub.add_parser("accept", help="freeze checked takes: auto rows -> ok")
+    a.add_argument("--ann", nargs="+", required=True, help="annotation dirs of checked takes")
     args = ap.parse_args(argv)
-    {"ids": cmd_ids, "prefill": cmd_prefill, "timeline": cmd_timeline}[args.cmd](args)
+    cmds = {"ids": cmd_ids, "prefill": cmd_prefill, "timeline": cmd_timeline, "accept": cmd_accept}
+    cmds[args.cmd](args)
 
 
 if __name__ == "__main__":

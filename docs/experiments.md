@@ -405,3 +405,63 @@ UR Fall (cấu hình cuối): cam0 test P/R/F1 0.682/1.000/0.811, FA 134.8/giờ
 - **cam1 (hành lang): không calib.** Hành lang rộng khoảng 2 viên gạch, chỉ một hàng góc nằm hẳn trong sàn (thẳng hàng, không đủ cho homography), các góc khác bị len chân tường che (`cam1_corridor_floor_zoom.png`). cam1 không có homography → không chấm INTRUSION/CROWD; PPE, té ngã vẫn chấm.
 - **Zone (`configs/zones.yaml`, `cam2_zones.jpg`):** Z2 vùng cấm 2×2 viên trước cửa thoát hiểm; Z3 vùng rủi ro 2×3 viên giữa sảnh; Z1 bắt buộc PPE phần sàn còn lại. Cạnh theo mạch gạch.
 - Toàn bộ test: 179 passed, ruff sạch.
+
+## 2026-11-06 — Chấm điểm: track bị nhảy người (ID swap) tách theo thời gian
+- **Code:** commit gốc `f118805` + thay đổi s17. `eval/metrics.py`: `TrackGT` (nhiều dòng cùng `(cam, track)` = các đoạn thời gian), `GidGT` (global_id → người: đa số như cũ; nếu global_id chứa track bị tách thì lấy người của frame gần `t_raise` nhất); `match_events` gọi theo `t_raise_ms`; `association_metrics` và `training/visibility/build_v_dataset_c2.py` tra người theo thời gian. `tools/label_intervals.py validate`: các đoạn của một track phải tăng dần, không chồng nhau, nằm trong track (±1 s). `tools/label_assist.py`: status `swap`; `fixed` (kể cả `gt_id` trống) giữ nguyên nhưng **không làm mẫu**; lệnh `accept` chốt take đã duyệt (`auto` → `ok`). Lý do: dùng track đã sửa làm mẫu (thường là track cận mặt / một phần người) làm 4 track đã duyệt ở T01/T02 đổi sang `review`; thử lấy nhóm mẫu tốt nhất hoặc ngưỡng ≥ 25 frame đều tệ hơn (review 22 → 23–37), nên bỏ, giữ thứ tự ưu tiên mẫu ban đầu. Sau khi đổi: 8 mẫu, auto 184 / review 19 / nomatch 36 / short 98 trên s01.
+- **Không đổi số cũ:** track không tách cho đúng mapping đa số cũ (test `test_gid_gt_majority_unchanged_without_split`); chưa có số C2 nào (chưa có nhãn). WILDTRACK không có dòng tách.
+- **Test:** `test_split_track_alert_goes_to_person_in_box_at_raise` (alert lúc A trong khung → TP của A; lúc B → FA; mapping đa số cũ cho FP + FN), `test_track_gt_split_track_and_unlabelled_rows`, 2 test `label_assist` (swap; fixed + accept). Toàn bộ: 194 passed, ruff sạch.
+- **Nhãn s01_t01, s01_t02 xong `tracks.csv`** (`validate` OK, 2 người mỗi take, `accept`): cam3 track 11 của T01 là ca nhảy người đầu tiên (A 41.0–49.0 s, mất dấu 0.4 s, B 49.4–62.6 s). T02: người không đội mũ là B (P2).
+
+## 2026-11-06 — C2 s01, lần chạy đầu trên nhãn thật (chưa tune, config mặc định)
+- **Code:** commit gốc `f118805` + thay đổi s17 (dirty). Lệnh: `python -m eval.run_baselines --sessions data/jsonl/s01_t* --gt data/annotations --out eval/reports/c2_s01/untuned_all --obs-cache eval/reports/c2_s01/obs_cache` (chấm từng camera, gộp; 10 take × 3 cam; 88.9 s).
+- **Kết quả (PPE gộp, chưa tune, KHÔNG phải số báo cáo — chưa tách val/test):**
+
+| Method | P | R | F1 | FA/giờ | %UNKNOWN |
+|---|---|---|---|---|---|
+| B0 | 0.036 | 0.920 | 0.068 | 746.76 | 0.0 |
+| B1 | 0.237 | 0.760 | 0.362 | 73.00 | 0.0 |
+| B4 | 0.235 | 0.760 | 0.358 | 74.20 | 0.0 |
+| P | 0.174 | 0.600 | 0.270 | 84.97 | 41.7 |
+
+  Theo item: HELMET F1 B1 0.591 / P 0.486 (FA/giờ 14.36 / 10.77, n_gt 19); VEST F1 B1 0.197 / P 0.162 (FA/giờ 58.64 / 74.20, n_gt 6). Behavior (P run): INTRUSION P 1.000 R 0.400 (n_gt 10 = 5 lần × 2 cam); IMMOBILE 0/2; FALL 4.79 FA/giờ, CROWD 1.20 FA/giờ (không có GT).
+- **Phân tích lỗi (`err.py` trong scratchpad, liệt kê alert/miss theo take × cam):** gần như mọi báo sai là `PPE_VEST` của **A (gile xanh dương)**, ở cả B1 và P. Tỉ lệ frame có box gile trên các take đủ PPE (T01, T04, T05, T10): A 0.38 / 0.44 / 0.29 (cam1/2/3), B (cam) 0.79 / 0.82 / 0.91, C (xanh nõn chuối) 0.45 / 0.66 (cam2/3); mũ 0.91–0.99 cho cả 3. → **domain gap của detector** (SH17/CHV ít gile xanh dương), không phải lỗi "không nhìn thấy": thân A thấy rõ (v cao) nên P không cứu được. HELMET: P giảm FA/giờ (10.77 so với 14.36) nhưng recall thấp hơn; T03 cam3 P bỏ sót 5/5 đoạn tháo mũ ngắn (3–8 s).
+- **Hướng xử lý hợp lệ:** hiệu chỉnh p trên C2 val (bước calib, §15 2026-10-29) — chạy bằng `eval.run_c2 --cv --cv-refit`. Không train detector trên C2 (§9).
+
+## 2026-11-06 — Cross-validation theo take trên s01 (`eval.run_c2 --cv`)
+- **Code:** `eval/run_c2.py --cv` (danh sách `cv:` trong `configs/c2_split.yaml` = 10 take s01): mỗi fold tune **mọi phương pháp bằng cùng thủ tục** (`eval.tune_c2`, mục tiêu F1 PPE) trên 9 take, chấm trên take còn lại (B0/B1/B4/P + 5 ablation, ablation dùng ngưỡng của P), gộp số đếm của các take bị giữ lại (`pool_results`). Run dùng chung giữa các fold (`tune_c2.tune(runs_root=)`: một run chỉ phụ thuộc take, cam, phương pháp, giá trị). `--cv-refit`: mỗi fold fit lại hiệu chỉnh p + v_learned **chỉ trên 9 take val** (`step_calib`), bộ phận thiếu mẫu giữ fit SH17/CHV; khi đó run không dùng chung.
+- Hai lần chạy: `eval/reports/c2_s01` (không refit, hiệu chỉnh SH17/CHV) và `eval/reports/c2_s01_refit` (refit theo fold). Số liệu: mục kế tiếp, khi chạy xong.
+- Test: `tests/test_run_c2_cv.py` (gộp số đếm theo phương pháp và camera).
+
+## 2026-11-06 — Độ nhạy trên s01 (mô tả, cả 10 take, quanh điểm tune của fold T01)
+- **Lệnh:** `python -m eval.run_sensitivity --sessions data/jsonl/s01_t* --gt data/annotations --out eval/reports/c2_s01/sens_all --jobs 3 --tuned eval/reports/c2_s01/cv/fold_s01_t01/tune/tuned.json --param evidence.theta_obs 0.125 0.25 0.5 1 2 --param evidence.tau_s 0.5 1 2 4 --param alert.T_alert_s 1 2 3 5 8 --policies P B1 B4` (~3 phút). Không phải số held-out: chỉ để xem xu hướng.
+- **θ_obs** (P, τ = 1): 0.125 → F1 0.510 / UNKNOWN 20.5 %; 0.25 → 0.531 / 25.6 %; 0.5 → 0.419 / 40.8 %; **1 → 0 alert (UNKNOWN 80.6 %)**. Xác nhận: với một camera Ω ≤ v·τ nên θ_obs ≥ τ là không bao giờ quan sát đủ.
+- **Tách theo item (quét T_alert):** P **không báo gile lần nào** (recall gile 0, FA gile 0) ở mọi T_alert; B1/B4 bắt 6/6 khoảng gile với FA gile 16.8–156.8/giờ. → ưu thế tổng của P chủ yếu do tắt gile (θ_neg = −2 mà bằng chứng thân không tới), **không phải bằng chứng cho C1**. Phải báo cáo theo item.
+- **Mũ (so công bằng)** — `eval/per_take_c2.py` (`eval/reports/c2_s01/per_take_helmet_T1.0`, `_T3.0`), TP / FP / FN gộp 10 take × 3 cam:
+  - T_alert 1 s: B1 17 / 45 / 2, B4 17 / 47 / 2, **P 16 / 22 / 3** (−51 % FP so với B1). Trên các take đủ PPE (T01, T04, T05, T06, T08, T10) P 0 FP, B1 11 FP.
+  - T_alert 3 s: B1 13 / 12 / 6, B4 13 / 13 / 6, P 13 / 11 / 6 (ngang nhau: persistence 3 s đã lọc các lần bị che ngắn).
+  - → C1 cho phép cảnh báo nhanh (1 s) mà không bùng báo sai; ở persistence dài, lợi thế nhỏ.
+- **Báo sai lặp:** phần lớn FP ở T02 (B không đội mũ cả take) và T07 là alert lặp cho cùng vi phạm thật (track đứt → global id mới → alert mới; §10.2 cho mỗi GT khớp 1 alert). Như nhau cho mọi phương pháp; ghi vào hạn chế.
+
+## 2026-11-06 — Kết quả CV theo take trên s01 (không refit hiệu chỉnh p) — `eval/reports/c2_s01/cv/pooled`
+- **Lệnh:** `python -m eval.run_c2 --cv --out eval/reports/c2_s01 --jobs 4` (~41 phút), chấm lại 1 lần sau khi thêm `fp_duplicate` (2 m 24 s, tune giữ nguyên). Commit gốc `f118805` + thay đổi s17. Mọi số dưới đây là **held-out**, gộp 10 fold × 3 cam (50.1 phút-camera).
+- **Bảng chính (PPE gộp):** B0 F1 0.068 / FA 746.76/giờ; B1 0.343 / 39.49 (R 0.48); B4 0.343 / 39.49; **P 0.273 / 15.56 (R 0.24, UNKNOWN 34.6 %)**. Ablation: no_v 0.327 / 25.13; no_unknown 0.296 / 80.18; no_temporal 0.250 / 20.34; Dempster–Shafer 0.248 / 96.94; v_learned 0.333 / 23.93.
+- **Theo item:** mũ B1 TP 6 / FP 8 / FN 13, B4 6 / 9 / 13, P 6 / 13 / 13; gile B1 6 / 25 / 0, B4 6 / 24 / 0, **P 0 / 0 / 6**.
+- **Alert lặp (`fp_duplicate`, vẫn là FP theo §10.2):** B1 13/33, B4 14/33, P 11/13, no_v 14/21, no_unknown 26/67, v_learned 14/20. → FP không lặp: **B1 20, B4 19, P 2** (−90 %), no_v 7, no_unknown 41, v_learned 6.
+- **Theo take (held-out):** trên 6 take đủ PPE (T01, T04, T05, T08, T09, T10) B1 15 FP, P 1. T03 (7 đoạn tháo mũ) bị cả ba bỏ sót hết khi là take test: thiếu loại tình huống này ở tập tune (B1 tune ra T_alert 16 s, P θ_obs 1). P mất 6 TP gile ở T06/T07.
+- **Tham số tune:** P ổn định ở θ_obs 0.25 / τ 1 / θ_neg −2 / θ_pos 0.25 / T_alert 3 (7/10 fold); B1 T_alert 5 (9/10), B4 5–8.
+- **Kết luận trung thực:** theo F1 gộp, P **không** hơn baseline trên s01. Theo mục tiêu của C1 (báo sai do không nhìn thấy), P giảm 90 % báo sai không lặp và giữ nguyên số vi phạm mũ bắt được; cái giá là gile bị tắt (ngưỡng chung cho mọi bộ phận + detector gile xanh kém). Dữ liệu nhỏ (25 khoảng PPE × cam), chênh lệch chưa có ý nghĩa thống kê.
+
+## 2026-11-06 — Kết quả CV theo take trên s01, **refit hiệu chỉnh p theo fold (bảng chính)** — `eval/reports/c2_s01_refit/cv/pooled`
+- **Lệnh:** `python -m eval.run_c2 --cv --cv-refit --out eval/reports/c2_s01_refit --jobs 6` (~1 giờ), chấm lại sau khi thêm `fp_duplicate` (~2 phút). Hiệu chỉnh p + v_learned fit trên 9 take val mỗi fold (feet giữ fit SH17/CHV). Held-out, gộp 10 fold × 3 cam.
+- **Bảng chính:** B0 F1 0.068 / FA 746.76/giờ; B1 0.343 / 39.49 (R 0.48, TTD 17.37 s); **B4 0.393 / 28.72** (R 0.48, TTD 23.52 s); **P 0.255 / 19.15** (R 0.24, UNKNOWN 33.1 %, **TTD 7.15 s**). Ablation: no_v 0.231 / 52.66; no_unknown 0.229 / 118.48; no_temporal 0.235 / 23.93; Dempster–Shafer 0.174 / 157.97; v_learned 0.290 / 33.51.
+- **Theo item:** mũ B1 TP 6 / FP 8 / FN 13, B4 6 / 7 / 13, P 6 / 16 / 13; gile B1 6 / 25 / 0, B4 6 / 17 / 0, **P 0 / 0 / 6**.
+- **Báo sai không lặp (FP − fp_duplicate):** B1 20, B4 14, **P 1**; no_v 26, no_unknown 69, no_temporal 3, Dempster–Shafer 100, v_learned 10. 15/16 báo sai của P là alert lặp cho vi phạm thật.
+- **Tham số P:** T_alert 1 s ở 9/10 fold (θ_obs 0.5, τ 2, θ_neg −2, θ_pos 1); fold T03 chọn T_alert 5, θ_obs 1.
+- **So với không refit:** B4 lợi nhiều nhất (F1 0.343 → 0.393, FA 39.49 → 28.72); P F1 0.273 → 0.255, báo sai không lặp 2 → 1; vai trò của v rõ hơn (no_v: 7 → 26 báo sai không lặp).
+- **Kết luận:** theo F1 gộp, **B4 tốt nhất, P kém nhất trong ba** (recall thấp do tắt gile). Theo mục tiêu C1: P gần như loại hết báo sai không lặp (1 so với 14–20), bắt mũ như baseline và báo nhanh hơn ~2.4–3 lần; v và UNKNOWN đều cần (ablation). Gile là điểm thất bại (ngưỡng chung + detector gile xanh). n nhỏ: không kết luận thống kê.
+
+## 2026-11-06 — Thử nghiệm: θ_neg riêng theo bộ phận (`--space per_part`) — kết quả âm tính
+- **Code:** `evidence.theta_neg_part.{head,torso,feet}` (null = dùng `theta_neg`; mặc định null, không đổi P); `eval.run_c2 --cv --cv-refit --space per_part --out eval/reports/c2_s01_refit_pp --jobs 8` (~1 giờ 15 phút): P tune θ_neg đầu ∈ {−2, −1, −0.5, −0.25}, thân ∈ {−2, −1, −0.5, −0.25, −0.1} thay cho θ_neg chung.
+- **Tune ra:** thân −1 (9/10 fold), đầu −0.5 (9/10), τ 4, θ_obs 0.5, T_alert 1 (7/10). Val F1 0.54–0.58 (so với ~0.53 khi chung).
+- **Held-out (gộp):** P F1 **0.222** (chung: 0.255), FA 27.52/giờ (19.15), báo sai không lặp **6** (1), mũ TP 6 / FP 19 / FN 13, **gile TP 0 / FP 4 / FN 6** (vẫn bỏ sót hết). Ablation cùng xu hướng: no_v 21, no_unknown 53 báo sai không lặp.
+- **Kết luận:** ngưỡng riêng theo bộ phận không cứu được gile trên take giữ lại (overfit: val 0.54–0.58 → test 0.22); vấn đề gile nằm ở detector (gile xanh dương), không ở ngưỡng. Giữ P với θ_neg chung; tuỳ chọn để tắt.

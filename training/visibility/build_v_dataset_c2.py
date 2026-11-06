@@ -92,7 +92,7 @@ def build(
                     if k % stride:
                         continue
                     for i, p in enumerate(fr.persons):
-                        gt_id = track_gt.get((fr.cam_id, p.track_id))
+                        gt_id = track_gt.at(fr.cam_id, p.track_id, fr.ts_ms)
                         if gt_id is None:
                             stats["unlabelled"] += 1
                             continue

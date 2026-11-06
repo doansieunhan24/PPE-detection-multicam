@@ -53,3 +53,4 @@ Mỗi session làm việc có một file. Claude **đọc lại thư mục này 
 | 2026-10-31 | [2026-10-31_s14.md](2026-10-31_s14.md) | Bỏ ghép người giữa các cam (`association.mode: none`); eval chấm từng cam; CROWD đếm theo cam; kịch bản C2 = 11 take; commit camera Tiandy LAN |
 | 2026-10-31 | [2026-10-31_s15.md](2026-10-31_s15.md) | `record_c2`; calib sàn gạch + khử méo (cam2 LOO 0.039 m, cam3 0.012 m); thêm cam3 trong sảnh; zones thật; quay C2 s01 T01–T10 (3 cam, gile phản quang); chọn cross-validation theo take |
 | 2026-11-05 | [2026-11-05_s16.md](2026-11-05_s16.md) | JSONL s01 đủ; commit cột `cams` (2/11); `label_assist` gán nhãn bán tự động (ids theo màu, prefill từ kịch bản, timeline) |
+| 2026-11-06 | [2026-11-06_s17.md](2026-11-06_s17.md) | Nhãn s01 đủ 10 take (17 interval); CV theo take: F1 B4 0.393 > P 0.255 nhưng báo sai không lặp P 1 / B4 14, P tắt gile; báo cáo + slide |

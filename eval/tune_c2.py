@@ -131,9 +131,12 @@ def tune(
     obs_cache: Path | None = None,
     max_extend: int = 3,
     per_cam: bool | None = None,
+    runs_root: Path | None = None,
 ) -> dict:
     """base: fixed overrides per policy ("*" = all), e.g. a C2-fitted p calibration for P.
-    per_cam: score each camera alone (None: when association.mode is none); B2/B3 skipped."""
+    per_cam: score each camera alone (None: when association.mode is none); B2/B3 skipped.
+    runs_root: where the per-(session, camera, policy, values) runs live (default <out>); a run
+    depends only on those and `base`, so cross-validation folds with one base share it."""
     if per_cam is None:
         per_cam = per_camera_default(Path(config))
     if per_cam:
@@ -148,14 +151,19 @@ def tune(
         keys = space[pol]
         for k in keys:
             apply_overrides(fusion_cfg, {k: 0})  # fail fast on a typo
-        best[pol] = {k: float(_get(fusion_cfg, k)) for k in keys}
+        # a per-part key left null in the config starts from the shared value it falls back to
+        best[pol] = {
+            k: float(_get(fusion_cfg, k) if _get(fusion_cfg, k) is not None
+                     else _get(fusion_cfg, k.rsplit("_part.", 1)[0]))
+            for k in keys
+        }  # fmt: skip
     cache: dict[tuple, dict] = {}
 
     def evaluate_many(cands: list[tuple[str, dict]]) -> None:
         todo = [(p, ov) for p, ov in cands if (p, tuple(sorted(ov.items()))) not in cache]
         jl = [
-            (p, ov, {**base.get("*", {}), **base.get(p, {})}, sessions, gt, str(out), config,
-             delta_ms, obs_cache, per_cam)
+            (p, ov, {**base.get("*", {}), **base.get(p, {})}, sessions, gt,
+             str(runs_root or out), config, delta_ms, obs_cache, per_cam)
             for p, ov in todo
         ]  # fmt: skip
         if jobs > 1 and len(jl) > 1:

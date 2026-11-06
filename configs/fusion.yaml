@@ -36,6 +36,10 @@ visibility:
   learned: false              # ablation: v_learned (logistic regression)
   learned_path: configs/visibility_learned.yaml   # written by training/visibility/calibrate.py
 
+tracking:                     # in-camera track stitching (association.mode none); experiment 2026-11-06
+  stitch_gap_ms: null         # null = off; e.g. 1500: a new track near a just-lost one keeps its id
+  stitch_dist_h: 0.6          # max box-centre jump, in box heights
+
 evidence:
   p_clip: [0.01, 0.99]
   tau_s: 2.0
@@ -46,6 +50,10 @@ evidence:
   theta_obs: 1.0              # visibility-seconds (steady W*tau); TODO: tune
   theta_pos: 1.0              # TODO: tune
   theta_neg: -0.5             # no-box log-LR is only -0.73 (torso) … -1.18 (head); TODO: tune on C2
+  theta_neg_part:             # optional per-part theta_neg (null = theta_neg); experiment 2026-11-06
+    head: null
+    torso: null
+    feet: null
   initial_state: UNKNOWN
   method: logodds             # logodds | dempster_shafer
   ds:                         # thresholds for the Dempster–Shafer variant (score, obs in [-1,1], [0,1])

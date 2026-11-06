@@ -421,7 +421,7 @@ B2 (OR nhiều cam) và B3 (majority vote nhiều cam) chỉ có nghĩa khi ghé
 | P8 | 12–14 | Ablation, sensitivity, FPS bench, (optional) Jetson Orin | Toàn bộ bảng/biểu đồ trong `eval/reports/` |
 | P9 | 14–16 | Viết thuyết minh, slide, video demo | — |
 
-**Trạng thái hiện tại:** P0–P2 xong (cả DeepStream); code P5–P7 xong, demo live chạy được. P3 xong cho cam2 + cam3 (calib sàn gạch + khử méo). **P4: đã quay C2 session 1** (T01–T10, 3 cam Tiandy: cam1 hành lang, cam2 + cam3 sảnh), đánh giá bằng cross-validation theo take; s02 tuần sau. Không ghép người giữa các cam: 3 cam chấm riêng. Chi tiết: `process/STATUS.md`.
+**Trạng thái hiện tại:** P0–P2 xong (cả DeepStream); code P5–P7 xong, demo live chạy được. P3 xong cho cam2 + cam3. **P4: C2 s01 đã quay và gán nhãn đủ** (10 take, 17 interval). **Đánh giá s01 bằng cross-validation theo take đã chạy** (`eval.run_c2 --cv --cv-refit`): F1 B4 0.393 > B1 0.343 > P 0.255, nhưng báo sai không lặp P 1 / B4 14; P tắt gile. s02 quay sau làm test. Chi tiết: `process/STATUS.md`.
 
 ---
 
@@ -533,6 +533,13 @@ pytest -q && ruff check src eval tools
 | 2026-10-31 | **s01 đánh giá bằng cross-validation theo take** (tune trên các take khác, test trên take còn lại); s02 quay sau (giày bảo hộ, đổi vai/đồ, F1–F6) | Chưa có session test riêng; chia theo take đơn lẻ làm mất loại tình huống ở test |
 | 2026-11-02 | **Nhãn GT có cột `cams`** (camera có người/sự kiện trong khung, kể cả bị che; trống = mọi cam); chấm từng camera chỉ tính interval có cam đó (`eval.metrics.gt_for_cams`). Hướng dẫn gán nhãn: `docs/c2_labeling_guide.md` | Không có cột này thì sự kiện ngoài khung của một cam (vd. vùng cấm trong sảnh với cam1 hành lang) bị tính FN cho cam đó. Ghi tay thay vì lọc theo track để lỗi bỏ sót của detector không bị giấu |
 | 2026-11-02 | **s01 không chấm giày:** `data/jsonl/s01_tNN/zones.yaml` bỏ `boots` khỏi Z2 (người dùng chốt); `PPE_BOOTS` chấm từ s02 | s01 không ai mang giày bảo hộ; detector cũng không phân biệt giày bảo hộ với giày thường |
+| 2026-11-06 | **Track bị nhảy người (ID swap) tách theo thời gian trong `tracks.csv`** (nhiều dòng cùng `(cam, track)`, mỗi dòng một đoạn `[first_ms, last_ms]`, status `swap`); chấm: alert thuộc về người trong khung lúc `t_raise` (`eval.metrics.TrackGT`/`GidGT`). Track không tách giữ đa số như cũ (người dùng đồng ý) | Gán cả track cho người đa số thì alert lúc người kia trong khung bị tính sai người (FA giả + bỏ sót vi phạm thật); lỗi do tracker nhảy người phải tính cho hệ thống, như nhau cho mọi phương pháp |
+| 2026-11-06 | **Nhãn s01:** A = gile xanh dương (P1), B = gile cam (P2), C = gile xanh nõn chuối (P3). Track sửa tay (`fixed`) không làm mẫu cho gợi ý màu; take đã duyệt chốt bằng `label_assist accept` | Track sửa tay thường là cận mặt / một phần người: làm mẫu thì gợi ý ở take đã duyệt bị đổi |
+| 2026-11-06 | **T09 gán IMMOBILE 51–62 s dù chỉ chân trong Z3; T10 không gán CROWD** (chỉ A trong Z3, B trên vạch, C ngoài) — người dùng chọn; không nới Z3 sau khi xem dữ liệu | Giữ định nghĩa vùng; recall CROWD đo ở s02 (đứng rõ trong Z3) |
+| 2026-11-06 | **CV theo take cho s01:** `eval.run_c2 --cv` (danh sách `cv:` trong `configs/c2_split.yaml`), tune mọi phương pháp bằng cùng thủ tục trên 9 take, chấm take còn lại, gộp số đếm; `--cv-refit` fit lại hiệu chỉnh p / v_learned chỉ trên 9 take val của fold (quy trình chuẩn theo 2026-10-29) | Chưa có session test riêng; run dùng chung giữa các fold khi không refit |
+| 2026-11-06 | **Chỉ số phụ `fp_duplicate`:** báo sai rơi vào một khoảng GT cùng người cùng loại (alert lặp cho vi phạm thật, vd. sau khi track đứt); FA/giờ và luật khớp §10.2 **không đổi**, chỉ báo cáo thêm | Trên s01, 11/13 báo sai của P và 13/33 của B1 là alert lặp; không tách ra thì không đọc được báo sai thật |
+| 2026-11-06 | **Tuỳ chọn thử nghiệm, mặc định tắt:** `evidence.theta_neg_part` (θ_neg theo bộ phận; CV âm tính, giữ θ chung) và `tracking.stitch_gap_ms` (nối track mới với track vừa mất trong cùng cam; s01 1.5 s: 116 lần nối, 91 % đúng người). Khi nối track, chấm theo người trong khung lúc báo (`GidGT(stitched=True)`) | Gile 0/6 và alert lặp là hai điểm yếu lớn nhất của P trên s01; mặc định giữ nguyên để không đổi số cũ |
+| 2026-11-06 | **s02 = session test, cả 3 người mặc gile cam / xanh nõn chuối** (không gile xanh dương); không quay lại s01 (`docs/c2_s02_plan.md`) | Detector bắt gile xanh dương 29–44 % frame: bảng gile của s01 đo lỗi detector chứ không đo C1; hạn chế này giữ làm phát hiện từ s01 |
 | — | Có Jetson Orin không: `TODO` | |
 
 ---

@@ -4,11 +4,15 @@ An alert matches a GT interval if: same person (global_id → gt_id mapping), sa
 t_raise ∈ [t_start − δ, t_end + δ]. Each GT interval matches at most one alert; unmatched
 alerts are false alarms. FA/hour = false alarms / video duration (h).
 Zone-level types (CROWD) have no person: GT gt_id is empty and matching uses type + time only.
+A track whose identity switches mid-way (ID swap) is labelled with one tracks.csv row per
+stretch; an alert then belongs to the person in the box at t_raise (TrackGT / GidGT).
 """
 
 from __future__ import annotations
 
+import bisect
 import csv
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -16,6 +20,106 @@ from pathlib import Path
 from src.common.schemas import AlertEvent, ComplianceState
 
 PERSONLESS_TYPES = frozenset({"CROWD"})
+
+TrackKey = tuple[str, int]  # (cam_id, track_id)
+
+
+class TrackGT:
+    """GT person of each (cam_id, track_id) from tracks.csv. A track labelled on one row has one
+    person. A track on several rows (ID swap) is split in time: each row holds over its own
+    [first_ms, last_ms]; an empty gt_id there = no actor in that stretch."""
+
+    def __init__(self, segs: Mapping[TrackKey, Sequence[tuple[int, int, int | None]]]):
+        self.segs = {k: sorted(v) for k, v in segs.items() if v}
+
+    @classmethod
+    def from_rows(cls, rows: Iterable[Mapping[str, str]]) -> TrackGT:
+        by_key: dict[TrackKey, list[tuple[int, int, int | None]]] = {}
+        for r in rows:
+            g = int(r["gt_id"]) if r["gt_id"].strip() else None
+            key = (r["cam_id"], int(r["track_id"]))
+            by_key.setdefault(key, []).append((int(r["first_ms"]), int(r["last_ms"]), g))
+        return cls({k: v for k, v in by_key.items() if len(v) > 1 or v[0][2] is not None})
+
+    @classmethod
+    def from_csv(cls, path: str | Path) -> TrackGT:
+        with open(path, encoding="utf-8", newline="") as f:
+            return cls.from_rows(csv.DictReader(f))
+
+    def is_split(self, key: TrackKey) -> bool:
+        return len(self.segs.get(key, ())) > 1
+
+    def at(self, cam: str, tid: int, ts_ms: int) -> int | None:
+        s = self.segs.get((cam, tid))
+        if not s:
+            return None
+        if len(s) == 1:
+            return s[0][2]
+        for a, b, g in s:
+            if a <= ts_ms <= b:
+                return g
+        return min(s, key=lambda x: min(abs(ts_ms - x[0]), abs(ts_ms - x[1])))[2]
+
+    def get(self, key: TrackKey, default: int | None = None) -> int | None:
+        """Whole-track person (longest labelled stretch), for time-free uses."""
+        s = [x for x in self.segs.get(key, ()) if x[2] is not None]
+        return max(s, key=lambda x: x[1] - x[0])[2] if s else default
+
+    def __contains__(self, key: object) -> bool:
+        return key in self.segs
+
+    def __len__(self) -> int:
+        return len(self.segs)
+
+
+class GidGT:
+    """global_id → gt_id from per-frame gid_map rows (ts_ms, cam_id, track_id, global_id).
+    Majority over the frames, as before, unless a track of that global_id is split (ID swap) or
+    the global_id joins several tracks of one camera and `stitched` (a run with in-camera track
+    stitching): then the person of the frame nearest in time."""
+
+    def __init__(
+        self,
+        rows: Iterable[tuple[int, str, int, int]],
+        track_gt: TrackGT,
+        stitched: bool = False,
+    ):
+        votes: dict[int, Counter] = {}
+        frames: dict[int, list[tuple[int, int | None]]] = {}
+        split: set[int] = set()
+        tracks: dict[int, set[TrackKey]] = {}
+        for ts, cam, tid, gid in rows:
+            if (cam, tid) not in track_gt:
+                continue
+            g = track_gt.at(cam, tid, ts)
+            frames.setdefault(gid, []).append((ts, g))
+            if g is not None:
+                votes.setdefault(gid, Counter())[g] += 1
+            if track_gt.is_split((cam, tid)):
+                split.add(gid)
+            seen = tracks.setdefault(gid, set())
+            if stitched and (cam, tid) not in seen and any(c == cam for c, _ in seen):
+                split.add(gid)  # a second track of the same camera under this global id
+            seen.add((cam, tid))
+        self.majority = {gid: c.most_common(1)[0][0] for gid, c in votes.items()}
+        self.timeline = {gid: sorted(frames[gid]) for gid in split}
+
+    def at(self, gid: int, ts_ms: int) -> int | None:
+        tl = self.timeline.get(gid)
+        if tl is None:
+            return self.majority.get(gid)
+        i = bisect.bisect_left(tl, (ts_ms, -1))
+        near = [tl[j] for j in (i - 1, i) if 0 <= j < len(tl)]
+        return min(near, key=lambda x: abs(x[0] - ts_ms))[1]
+
+    def get(self, gid: int, default: int | None = None) -> int | None:
+        return self.majority.get(gid, default)
+
+
+def _person_of(gid_to_gt: Mapping[int, int] | GidGT, gid: int, ts_ms: int) -> int | None:
+    if isinstance(gid_to_gt, GidGT):
+        return gid_to_gt.at(gid, ts_ms)
+    return gid_to_gt.get(gid)
 
 
 @dataclass(frozen=True)
@@ -51,6 +155,7 @@ class EventMetrics:
     f1: float
     fa_per_hour: float
     mean_ttd_s: float | None  # time-to-detect over matched alerts
+    fp_duplicate: int = 0  # false alarms repeating a real, already matched violation (info only)
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -74,14 +179,15 @@ def load_gt_csv(path: str | Path) -> list[GTInterval]:
 def match_events(
     alerts: Sequence[AlertEvent],
     gt: Sequence[GTInterval],
-    gid_to_gt: Mapping[int, int],
+    gid_to_gt: Mapping[int, int] | GidGT,
     delta_ms: int = 2000,
 ) -> tuple[list[tuple[AlertEvent, GTInterval]], list[AlertEvent], list[GTInterval]]:
     """Greedy in time order: each alert takes the earliest-starting unmatched GT it fits."""
     used: set[int] = set()
     matches, fps = [], []
     for a in sorted(alerts, key=lambda a: a.t_raise_ms):
-        gt_id = gid_to_gt.get(a.global_id) if a.global_id is not None else None
+        gid = a.global_id
+        gt_id = _person_of(gid_to_gt, gid, a.t_raise_ms) if gid is not None else None
         cand = [
             (i, g)
             for i, g in enumerate(gt)
@@ -100,10 +206,33 @@ def match_events(
     return matches, fps, missed
 
 
+def duplicate_alerts(
+    fps: Sequence[AlertEvent],
+    gt: Sequence[GTInterval],
+    gid_to_gt: Mapping[int, int] | GidGT,
+    delta_ms: int = 2000,
+) -> list[AlertEvent]:
+    """False alarms that fall in a GT interval of the same person and type: a repeat alert for
+    a real violation (e.g. after a track break). Still false alarms under §10.2 (one alert per
+    GT interval); counted apart only to say how many of them repeat a true event."""
+    out = []
+    for a in fps:
+        gid = a.global_id
+        gt_id = _person_of(gid_to_gt, gid, a.t_raise_ms) if gid is not None else None
+        if any(
+            (g.gt_id == gt_id or g.type in PERSONLESS_TYPES)
+            and g.type == a.type.value
+            and g.t_start_ms - delta_ms <= a.t_raise_ms <= g.t_end_ms + delta_ms
+            for g in gt
+        ):
+            out.append(a)
+    return out
+
+
 def event_metrics(
     alerts: Sequence[AlertEvent],
     gt: Sequence[GTInterval],
-    gid_to_gt: Mapping[int, int],
+    gid_to_gt: Mapping[int, int] | GidGT,
     duration_s: float,
     delta_ms: int = 2000,
     types: Iterable[str] | None = None,
@@ -114,6 +243,7 @@ def event_metrics(
         gt = [g for g in gt if g.type in ts]
     matches, fps, missed = match_events(alerts, gt, gid_to_gt, delta_ms)
     tp, fp, fn = len(matches), len(fps), len(missed)
+    dup = len(duplicate_alerts(fps, gt, gid_to_gt, delta_ms))
     prec = tp / (tp + fp) if tp + fp else 0.0
     rec = tp / (tp + fn) if tp + fn else 0.0
     f1 = 2 * prec * rec / (prec + rec) if prec + rec else 0.0
@@ -129,6 +259,7 @@ def event_metrics(
         f1=f1,
         fa_per_hour=fp / (duration_s / 3600) if duration_s > 0 else float("nan"),
         mean_ttd_s=sum(ttd) / len(ttd) if ttd else None,
+        fp_duplicate=dup,
     )
 
 
@@ -143,8 +274,6 @@ def unknown_fraction(states: Iterable[ComplianceState]) -> float:
 
 def majority_gid_to_gt(pairs: Iterable[tuple[int, int]]) -> dict[int, int]:
     """global_id → gt_id by majority over per-frame (global_id, gt_id) co-occurrences."""
-    from collections import Counter
-
     votes: dict[int, Counter] = {}
     for gid, gt_id in pairs:
         votes.setdefault(gid, Counter())[gt_id] += 1
@@ -152,7 +281,7 @@ def majority_gid_to_gt(pairs: Iterable[tuple[int, int]]) -> dict[int, int]:
 
 
 def association_metrics(
-    obs: Iterable[tuple[int, str, int, int]], track_gt: Mapping[tuple[str, int], int]
+    obs: Iterable[tuple[int, str, int, int]], track_gt: Mapping[TrackKey, int] | TrackGT
 ) -> dict[str, float]:
     """Cross-camera association on labelled tracks (§10.1), from gid_map rows
     (ts_ms, cam_id, track_id, global_id) and the GT person of each (cam_id, track_id).
@@ -168,7 +297,10 @@ def association_metrics(
     by_ts: dict[int, list[tuple[str, int, int]]] = defaultdict(list)
     gids_of_gt: dict[int, set[int]] = defaultdict(set)
     for ts, cam, tid, gid in obs:
-        gt = track_gt.get((cam, tid))
+        if isinstance(track_gt, TrackGT):
+            gt = track_gt.at(cam, tid, ts)
+        else:
+            gt = track_gt.get((cam, tid))
         if gt is not None:
             by_ts[ts].append((cam, gt, gid))
             gids_of_gt[gt].add(gid)

@@ -154,3 +154,72 @@ def test_ids_cli_writes_only_confident_rows(tmp_path, monkeypatch):
     assert (out["3"]["gt_id"], out["3"]["status"], out["3"]["suggest"]) == ("1", "auto", "P1")
     assert out["4"]["gt_id"] == "" and out["4"]["status"] == "review"
     assert (ann / "tracks.csv.bak").exists()
+
+
+def test_ids_cli_swap_row_kept_and_not_a_seed(tmp_path, monkeypatch):
+    """A `swap` row (ID switch) keeps its gt_id and does not block overlapping tracks."""
+    from tools import label_assist as la
+
+    jd = tmp_path / "jsonl" / "s01_t01"
+    jd.mkdir(parents=True)
+    (jd / "cam1.jsonl").write_text("", encoding="utf-8")
+    ann = tmp_path / "ann" / "s01_t01"
+    (ann / "feats").mkdir(parents=True)
+    cols = la.TRACK_COLS + la.EXTRA_COLS
+    rows = [
+        ["cam1", 1, 0, 9000, 200, "1", "", "", "", ""],
+        ["cam1", 2, 0, 9000, 200, "2", "", "", "", ""],
+        ["cam1", 3, 20000, 40000, 400, "2", "", "", "", "swap"],
+        ["cam1", 4, 22000, 30000, 200, "", "", "", "", ""],  # orange, inside the swap span
+    ]
+    with open(ann / "tracks.csv", "w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(cols)
+        w.writerows(rows)
+    feats = {
+        1: TrackFeat(BLUE, None, 5),
+        2: TrackFeat(ORANGE, None, 5),
+        3: TrackFeat(0.5 * ORANGE + 0.5 * BLUE, None, 5),
+        4: TrackFeat(ORANGE, None, 5),
+    }
+    la.save_feats(ann / "feats" / "cam1.npz", feats, {})
+    monkeypatch.setattr(la, "_review_sheet", lambda *a, **k: None)
+    la.main(["ids", "--jsonl", str(jd), "--ann-root", str(tmp_path / "ann"), "--write"])
+    with open(ann / "tracks.csv", encoding="utf-8", newline="") as f:
+        out = {r["track_id"]: r for r in csv.DictReader(f)}
+    assert (out["3"]["gt_id"], out["3"]["status"]) == ("2", "swap")
+    assert (out["4"]["gt_id"], out["4"]["status"]) == ("2", "auto")
+
+
+def test_ids_cli_fixed_rows_kept_not_seeds_and_accept_freezes(tmp_path, monkeypatch):
+    from tools import label_assist as la
+
+    jd = tmp_path / "jsonl" / "s01_t01"
+    jd.mkdir(parents=True)
+    (jd / "cam1.jsonl").write_text("", encoding="utf-8")
+    ann = tmp_path / "ann" / "s01_t01"
+    (ann / "feats").mkdir(parents=True)
+    rows = [
+        ["cam1", 1, 0, 9000, 200, "1", "", "", "", ""],  # seed: blue
+        ["cam1", 2, 0, 9000, 200, "2", "", "", "", ""],  # seed: orange
+        ["cam1", 3, 20000, 21000, 30, "1", "", "", "", "fixed"],  # close-up, orange-ish
+        ["cam1", 4, 30000, 31000, 30, "", "", "", "", "fixed"],  # checked, no actor
+        ["cam1", 5, 40000, 49000, 200, "", "", "", "", ""],  # orange-ish: must stay P2
+    ]
+    with open(ann / "tracks.csv", "w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(la.TRACK_COLS + la.EXTRA_COLS)
+        w.writerows(rows)
+    near_orange = 0.8 * ORANGE + 0.2 * BLUE
+    feats = {1: TrackFeat(BLUE, None, 5), 2: TrackFeat(ORANGE, None, 5),
+             3: TrackFeat(near_orange, None, 5), 4: TrackFeat(LIME, None, 5),
+             5: TrackFeat(near_orange, None, 5)}  # fmt: skip
+    la.save_feats(ann / "feats" / "cam1.npz", feats, {})
+    monkeypatch.setattr(la, "_review_sheet", lambda *a, **k: None)
+    la.main(["ids", "--jsonl", str(jd), "--ann-root", str(tmp_path / "ann"), "--write"])
+    la.main(["accept", "--ann", str(ann)])
+    with open(ann / "tracks.csv", encoding="utf-8", newline="") as f:
+        out = {r["track_id"]: r for r in csv.DictReader(f)}
+    assert (out["3"]["gt_id"], out["3"]["status"]) == ("1", "fixed")
+    assert (out["4"]["gt_id"], out["4"]["status"]) == ("", "fixed")
+    assert (out["5"]["gt_id"], out["5"]["status"]) == ("2", "ok")  # 3 was no P1 seed

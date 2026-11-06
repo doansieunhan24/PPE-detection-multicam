@@ -28,10 +28,13 @@ Thứ tự cho cả session:
 python tools/label_assist.py ids --jsonl data/jsonl/s01_t* --ann-root data/annotations          # chạy thử
 python tools/label_assist.py ids --jsonl data/jsonl/s01_t* --ann-root data/annotations --write  # ghi tracks.csv
 # 2) xem data/annotations/s01_tNN/review_ids_camX.jpg (track xếp theo người, dòng đỏ = review)
-#    sửa dòng sai: đổi gt_id và ghi status = fixed (thành track mẫu); chạy lại ids --write
+#    sửa dòng sai / điền dòng review: đổi gt_id và ghi status = fixed; chạy lại ids --write
+#    take đã duyệt xong: chốt lại (auto -> ok, không bị gợi ý lại)
+python tools/label_assist.py accept --ann data/annotations/s01_t01
 # 3) điền ai làm gì vào data/annotations/s01_script.yaml rồi
 python tools/label_assist.py prefill --spec data/annotations/s01_script.yaml     --jsonl data/jsonl/s01_t* --ann-root data/annotations --ref cam2
 # 4) take có TODO: ảnh timeline để đọc thời điểm
+#    vùng nhỏ trong khung (Z2 cạnh cửa): --crop-zone Z2 phóng to quanh vùng; --t0 / --t1 chọn khoảng giây
 python tools/label_assist.py timeline --jsonl data/jsonl/s01_t08     --out data/annotations/s01_t08/timeline --cams cam2 cam3
 # 5) điền TODO trong intervals_src.csv → convert + validate (mục 5)
 ```
@@ -40,11 +43,15 @@ Cột `status` trong `tracks.csv` sau `ids --write`:
 
 | status | Ý nghĩa | `gt_id` |
 |---|---|---|
-| (trống) / `fixed` | Người gán (track mẫu) | giữ nguyên |
+| (trống) + có `gt_id` | Track mẫu do người chọn (chỉ các dòng này làm mẫu) | giữ nguyên |
+| `fixed` | Người gán sửa / điền; giữ nguyên, **không làm mẫu** (thường là track cận mặt, một phần người: mẫu màu kém) | giữ nguyên |
+| `ok` | Dòng `auto` đã duyệt (lệnh `accept`) | giữ nguyên |
 | `auto` | Gợi ý tin cậy (độ giống ≥ 0.55, cách người thứ hai ≥ 0.05, không trùng thời gian) | đã điền, vẫn phải xem ảnh |
 | `review` | Không chắc (đổi đồ, bị che, trùng thời gian) | trống, đoán ở cột `suggest` |
 | `nomatch` | Không giống ai (phản chiếu kính, tủ điện…) | trống |
 | `short` / `nofeat` | < 5 frame / không cắt được thân | trống |
+| `swap` | Người gán: track bị nhảy người giữa chừng, mỗi đoạn một dòng (mục 2); không dùng làm mẫu, công cụ không ghi đè | người của đoạn đó |
+| `fixed` + `gt_id` trống | Người gán đã xem: không phải ai (mẩu chân, bóng…); công cụ không gợi ý lại | trống |
 
 - Take có người **đổi đồ** (T06 cởi gile, T07 mũ xe máy + áo khoác): thêm 1 track mẫu của người đó
   **ngay trong take đó** (công cụ ưu tiên mẫu cùng take + cùng cam).
@@ -63,7 +70,15 @@ Mở `tracks.csv` (Excel / VS Code), xem ảnh thumbs, điền số `1`, `2`, `3
 
 - Một người bị tách thành nhiều track (mất track rồi có ID mới): **các track đó cùng `gt_id`**.
 - Track sai (không phải người: poster, bóng, phản chiếu kính): **để trống**.
-- Track bị đổi người giữa chừng (ID swap): lấy người chiếm phần lớn thời gian của track, ghi chú lại.
+- Track bị đổi người giữa chừng (ID swap): **tách thành nhiều dòng cùng `cam_id`, `track_id`**, mỗi dòng
+  một đoạn: `first_ms` / `last_ms` = đoạn đó (cùng mốc thời gian với cột gốc), `gt_id` = người trong khung
+  ở đoạn đó (trống nếu không phải ai), `status` = `swap`. Khi chấm, alert thuộc về người trong khung **lúc
+  báo** (`t_raise`). Thời điểm đổi người: lúc track mất dấu / khung nhảy (xem bbox trong JSONL hoặc ảnh
+  theo giây). Ví dụ s01_t01 cam3 track 11:
+  ```
+  cam3,11,41024,48984,199,1,...,swap
+  cam3,11,49384,62624,332,2,...,swap
+  ```
 - Track ngắn (< 1 s) khó nhìn: có thể để trống. Lưu ý: mọi alert không khớp GT đều là báo sai, nên
   nếu alert **duy nhất** của một người vi phạm rơi vào track ngắn bị để trống thì một TP thành FP + FN
   (hay gặp ở B0, báo theo từng frame). Gán được thì nên gán (`ids` gợi ý cho track ≥ 5 frame).

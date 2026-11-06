@@ -108,7 +108,11 @@ POLICY_IDS = ("B0", "B1", "B2", "B3", "B4", "P")
 
 
 def make_policy(
-    policy_id: str, fusion_cfg: dict, primary_cam: str | None = None, **ablation
+    policy_id: str,
+    fusion_cfg: dict,
+    primary_cam: str | None = None,
+    part: str | None = None,
+    **ablation,
 ) -> Policy:
     """Factory. `ablation` overrides EvidenceParams/StateParams fields for P variants,
     e.g. use_visibility=False, temporal=False, allow_unknown=False,
@@ -126,7 +130,7 @@ def make_policy(
         return ConfWeightedPolicy(lo, hi)
     if policy_id == "P":
         ev = EvidenceParams.from_config(fusion_cfg)
-        st = StateParams.from_config(fusion_cfg)
+        st = StateParams.from_config(fusion_cfg, part)
         ev_kw = {k: v for k, v in ablation.items() if k in ("use_visibility", "temporal")}
         st_kw = {k: v for k, v in ablation.items() if k in ("allow_unknown",)}
         ev = EvidenceParams(**{**ev.__dict__, **ev_kw})

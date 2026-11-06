@@ -72,3 +72,15 @@
 - Phần tự động chỉ liên kết track với người diễn (màu gile/quần + ràng buộc: hai track cùng cam cùng lúc là hai người khác nhau) và điền sẵn nhãn từ kịch bản quay. Nhãn PPE / vùng cấm / tụ tập / bất động **không** lấy từ output của hệ thống, nên việc chấm không bị vòng tròn. Nên viết rõ điểm này trong phần xây dựng bộ dữ liệu.
 - Mapping track → người dùng chung cho B0, B1, B4, P, nên lỗi mapping (nếu có) không làm lệch phép so sánh giữa các phương pháp. Mọi gợi ý đều được người xem lại.
 - Hạn chế: so màu không dùng được khi người diễn đổi đồ giữa take (T06, T07); những take đó cần track mẫu riêng.
+
+## Nhãn C2 s01 và lỗi tracker (2026-11-06)
+- Nhãn track → người bán tự động theo màu gile (8 track mẫu, 183 gợi ý được duyệt, 31 sửa tay); một gợi ý sai được phát hiện (T10 cam2 track 22, bị che). Thời điểm sự kiện do người đọc từ ảnh 1 frame/s.
+- 2 track bị nhảy người (T01 cam3 track 11, T05 cam3 track 1), cả hai khi một người đi ngang trước người kia. Khi chấm, alert thuộc về người trong khung lúc báo: lỗi tracker làm lẫn bằng chứng tích lũy (B4, P) bị tính cho hệ thống. Đưa vào phần phân tích lỗi / Limitations.
+- Diễn thật lệch kịch bản: T03 tháo/đội mũ 7 lần, T08 vào vùng cấm 5 lần; T09 nằm chỉ có chân trong vùng rủi ro (điểm sàn = đáy bbox không hợp với người nằm ngang); T10 ba người đứng cạnh vùng rủi ro nhưng không ở trong → không có sự kiện CROWD trên s01. Bài học cho s02: đánh dấu vùng trên sàn khi quay.
+
+## Kết quả C1 đầu tiên trên dữ liệu thật (s01, CV theo take, 2026-11-06)
+- Kể trung thực: theo F1 gộp P (0.255) **thua** B4 (0.393) và B1 (0.343). Lý do chính: P tune xong thì không báo gile (0/6), vì detector bắt gile xanh dương kém và θ_neg dùng chung cho mọi bộ phận (bằng chứng âm của thân yếu hơn đầu).
+- Đúng mục tiêu C1: báo sai **không lặp** P 1 so với B4 14, B1 20; mũ bắt được như nhau (6); P phát hiện nhanh hơn (7.2 s so với 17–24 s) vì tune ra T_alert 1 s. Ablation: bỏ v → 26, bỏ UNKNOWN → 69 báo sai không lặp.
+- Hình nên dùng: timeline T05 cam2 (v, p, trạng thái B1 vs P; `eval/reports/c2_s01/figs/timeline_t05_c.png`) — thấy ngay cơ chế UNKNOWN.
+- Bài học đánh giá: (1) tách báo sai thành "lặp" và "không lặp", vì phần lớn FP của P là alert lặp cho vi phạm thật sau khi track đứt; (2) báo cáo theo loại PPE, không chỉ gộp; (3) leave-one-take-out làm mất loại tình huống (T03 tháo mũ ngắn) ở fold test → cần session test riêng (s02).
+- θ_obs khi bỏ đa cam: Ω ≤ v·τ nên θ_obs phải < τ; mặc định cũ θ_obs = 1 (từ thời cộng v nhiều cam) làm P UNKNOWN 42 % thời gian.

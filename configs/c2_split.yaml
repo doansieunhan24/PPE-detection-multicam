@@ -5,3 +5,6 @@ jsonl_root: data/jsonl
 gt_root: data/annotations
 val: [s01]
 test: [s02, s03]
+# s01 (2026-10-31): one recording session, each take its own folder → leave-one-take-out
+# cross-validation (python -m eval.run_c2 --cv), until s02 gives a separate test session.
+cv: [s01_t01, s01_t02, s01_t03, s01_t04, s01_t05, s01_t06, s01_t07, s01_t08, s01_t09, s01_t10]

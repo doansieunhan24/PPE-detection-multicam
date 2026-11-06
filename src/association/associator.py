@@ -31,8 +31,15 @@ class Associator:
     d_max_truncated_m: float | None = None
     # ground_plane: cross-camera clusters (§7.2) | none: every (cam, track) is its own person
     mode: str = "ground_plane"
+    # mode none only: a new track of a camera takes over the global id of a track of the same
+    # camera that was lost at most stitch_gap_ms before, if its box centre is within
+    # stitch_dist_h × box height of where that track was last seen (None = off)
+    stitch_gap_ms: int | None = None
+    stitch_dist_h: float = 0.6
     gids: GlobalIdManager = field(init=False)
     _own_gid: dict[PersonKey, int] = field(init=False, default_factory=dict)
+    _n_gid: int = field(init=False, default=0)
+    _last: dict[int, tuple[str, int, float, float, float]] = field(init=False, default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.mode not in ("ground_plane", "none"):
@@ -40,8 +47,14 @@ class Associator:
         self.gids = GlobalIdManager(window=self.vote_window, reuse_dist_m=self.d_max_m)
 
     @classmethod
-    def from_config(cls, zones_cfg: dict, calibs: Mapping[str, CameraCalibration]) -> Associator:
+    def from_config(
+        cls,
+        zones_cfg: dict,
+        calibs: Mapping[str, CameraCalibration],
+        tracking_cfg: dict | None = None,
+    ) -> Associator:
         a = zones_cfg.get("association", {})
+        t = tracking_cfg or {}
         return cls(
             calibs,
             a.get("d_max_m", 0.8),
@@ -50,6 +63,8 @@ class Associator:
             a.get("foot_point", "ankles"),
             a.get("d_max_truncated_m"),
             a.get("mode", "ground_plane"),
+            t.get("stitch_gap_ms"),
+            t.get("stitch_dist_h", 0.6),
         )
 
     def floor_xy(self, cam: str, p: PersonDet) -> tuple[float, float]:
@@ -80,9 +95,34 @@ class Associator:
     def _step_per_camera(self, group: Mapping[str, PerceptionFrame]) -> dict[PersonKey, int]:
         result: dict[PersonKey, int] = {}
         for cam, fr in group.items():
+            active = {self._own_gid[(cam, p.track_id)] for p in fr.persons
+                      if (cam, p.track_id) in self._own_gid}  # fmt: skip
             for p in fr.persons:
                 key = (cam, p.track_id)
                 if key not in self._own_gid:
-                    self._own_gid[key] = len(self._own_gid) + 1
-                result[key] = self._own_gid[key]
+                    gid = self._stitch(cam, p, fr.ts_ms, active)
+                    if gid is None:
+                        self._n_gid += 1
+                        gid = self._n_gid
+                    self._own_gid[key] = gid
+                    active.add(gid)
+                gid = self._own_gid[key]
+                x1, y1, x2, y2 = p.bbox
+                self._last[gid] = (cam, fr.ts_ms, (x1 + x2) / 2, (y1 + y2) / 2, y2 - y1)
+                result[key] = gid
         return result
+
+    def _stitch(self, cam: str, p: PersonDet, ts_ms: int, active: set[int]) -> int | None:
+        """Global id of the nearest track of this camera lost within the gap, else None."""
+        if self.stitch_gap_ms is None:
+            return None
+        x1, y1, x2, y2 = p.bbox
+        cx, cy, h = (x1 + x2) / 2, (y1 + y2) / 2, y2 - y1
+        best, best_d = None, math.inf
+        for gid, (c, t, lx, ly, lh) in self._last.items():
+            if c != cam or gid in active or not 0 < ts_ms - t <= self.stitch_gap_ms:
+                continue
+            d = math.hypot(cx - lx, cy - ly) / max(h, lh, 1.0)
+            if d <= self.stitch_dist_h and d < best_d:
+                best, best_d = gid, d
+        return best

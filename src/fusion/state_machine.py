@@ -26,12 +26,15 @@ class StateParams:
             raise ValueError("theta_neg must be <= theta_pos")
 
     @classmethod
-    def from_config(cls, cfg: dict) -> StateParams:
+    def from_config(cls, cfg: dict, part: str | None = None) -> StateParams:
+        """part: evidence.theta_neg_part[part] when set (not null) replaces theta_neg; parts differ
+        in how negative one no-box frame is (log-LR about -0.7 torso vs -1.2 head on SH17/CHV)."""
         e = cfg["evidence"]
+        per_part = (e.get("theta_neg_part") or {}).get(part) if part is not None else None
         return cls(
             theta_obs=e["theta_obs"],
             theta_pos=e["theta_pos"],
-            theta_neg=e["theta_neg"],
+            theta_neg=e["theta_neg"] if per_part is None else per_part,
             initial_state=ComplianceState(e.get("initial_state", "UNKNOWN")),
         )
 

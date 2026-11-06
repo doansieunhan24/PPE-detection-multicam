@@ -231,12 +231,24 @@ def cmd_validate(args: argparse.Namespace) -> None:
     gt_ids: set[int] = set()
     with open(ann / "tracks.csv", encoding="utf-8", newline="") as f:
         rows = list(csv.DictReader(f))
+    stretches: dict[tuple[str, int], list[tuple[int, int]]] = {}
     for r in rows:
         key = (r["cam_id"], int(r["track_id"]))
         if key not in spans:
             errors.append(f"tracks.csv: {key} not in JSONL")
+        stretches.setdefault(key, []).append((int(r["first_ms"]), int(r["last_ms"])))
         if r["gt_id"].strip():
             gt_ids.add(int(r["gt_id"]))
+    for key, st in stretches.items():  # a track on several rows = ID swap, split in time
+        if len(st) < 2:
+            continue
+        st.sort()
+        gaps = zip(st, st[1:], strict=False)
+        if any(a >= b for a, b in st) or any(b0 > a1 for (_, b0), (a1, _) in gaps):
+            errors.append(f"tracks.csv: {key} split rows must be ordered, non-overlapping {st}")
+        lo, hi = (spans[key][0] - 1000, spans[key][1] + 1000) if key in spans else (0, 0)
+        if key in spans and not (lo <= st[0][0] and st[-1][1] <= hi):
+            errors.append(f"tracks.csv: {key} split rows {st} outside the track {spans[key][:2]}")
     unlabeled = sum(1 for r in rows if not r["gt_id"].strip())
     t_min = min(s[0] for s in spans.values()) if spans else 0
     t_max = max(s[1] for s in spans.values()) if spans else 0

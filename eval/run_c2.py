@@ -18,6 +18,14 @@ Steps (each writes <out>/<step>/ and can be rerun alone; later steps read earlie
 
 --no-refit skips calib (base = config files fitted on SH17/CHV).
 
+--cv (sessions listed under `cv:` in the split file, e.g. the takes of one recording session):
+leave-one-session-out cross-validation. For each fold, every method is tuned on the other
+sessions with the same procedure and scored on the held-out one; held-out counts are pooled
+over the folds (<out>/cv/pooled). Runs are shared between folds (a run depends only on its
+session, camera, method and values); calib is not refitted per fold (SH17/CHV fit).
+
+    python -m eval.run_c2 --cv --out eval/reports/c2_s01 --jobs 4
+
 Per camera (zones.yaml association.mode = none, the default since 2026-10-31): tune, main and
 sens score every (session, camera) as its own system and pool them (FA/hour per camera-hour);
 B2/B3 are dropped, numcams is skipped and the main table gets a per-camera breakdown instead.
@@ -40,6 +48,13 @@ from src.common.logging import get_logger, setup_logging
 log = get_logger(__name__)
 SCORING = {True: "per camera (each camera alone, pooled)", False: "per person across cameras"}
 STEPS = ["check", "calib", "tune", "main", "sens", "numcams", "report"]
+# --space per_part (exploratory, 2026-11-06): P tunes theta_neg separately for head and torso
+_PP = {k: v for k, v in tune_c2.SPACE["P"].items() if k != "evidence.theta_neg"}
+SPACES = {
+    "default": tune_c2.SPACE,
+    "per_part": {"P": {**_PP, "evidence.theta_neg_part.head": [-2.0, -1.0, -0.5, -0.25],
+                       "evidence.theta_neg_part.torso": [-2.0, -1.0, -0.5, -0.25, -0.1]}},
+}  # fmt: skip
 
 
 def load_split(path: Path) -> dict:
@@ -125,6 +140,93 @@ def step_calib(split: dict, out: Path, config_dir: Path) -> dict:
     return base
 
 
+def _parse_set(kv: str) -> tuple[str, object]:
+    k, v = kv.split("=", 1)
+    return k, yaml.safe_load(v)
+
+
+def pool_results(per_fold: list[dict[str, dict]]) -> dict[str, dict]:
+    """Pool held-out results of the folds per method (counts summed, rates recomputed)."""
+    out: dict[str, dict] = {}
+    for name in per_fold[0]:
+        rows = [f[name] for f in per_fold if name in f]
+        out[name] = run_baselines._pool(rows)
+        if all("by_cam" in r for r in rows):
+            cams = sorted({c for r in rows for c in r["by_cam"]})
+            out[name]["by_cam"] = {
+                c: run_baselines._pool([r["by_cam"][c] for r in rows if c in r["by_cam"]])
+                for c in cams
+            }
+    return out
+
+
+def step_cv(sessions: list[Path], gt: Path, out: Path, cfg: Path, args) -> Path:
+    """Leave-one-session-out: tune on the others, score the held-out one, pool (see --cv)."""
+    d = out / "cv"
+    shared, cache = d / "tune_runs", out / "obs_cache"
+    folds: list[dict[str, dict]] = []
+    tuned_rows = []
+    for held in sessions:
+        val = [s for s in sessions if s != held]
+        fd = d / f"fold_{held.name}"
+        tp = fd / "tune" / "tuned.json"
+        base: dict = {}
+        if args.cv_refit:  # p calibration + v_learned fitted on this fold's val sessions only
+            bp = fd / "base.json"
+            if bp.exists() and not args.retune:
+                base = json.loads(bp.read_text(encoding="utf-8"))
+            else:
+                base = step_calib({"val": val, "test": [held], "gt": gt}, fd, cfg)
+        if args.set:  # fixed fusion overrides for every method (e.g. tracking.stitch_gap_ms=1500)
+            fixed = dict(_parse_set(kv) for kv in args.set)
+            base = {**base, "*": {**base.get("*", {}), **fixed}}
+        if tp.exists() and not args.retune:
+            res = json.loads(tp.read_text(encoding="utf-8"))
+        else:
+            space = SPACES[args.space]
+            res = tune_c2.tune([str(s) for s in val], str(gt), fd / "tune", str(cfg),
+                               list(space), args.objective, args.min_recall,
+                               jobs=args.jobs, delta_ms=args.delta_ms, obs_cache=cache,
+                               base=base, runs_root=fd / "tune" if base else shared,
+                               space=space)  # fmt: skip
+            res["meta"] = {"commit": git_commit(), "sessions": [str(s) for s in val],
+                           "held_out": str(held), "objective": args.objective}  # fmt: skip
+            tp.parent.mkdir(parents=True, exist_ok=True)
+            tp.write_text(json.dumps(res, indent=2), encoding="utf-8")
+            _write_tuned_md(res, fd / "tune" / "tuned.md", [str(s) for s in val], args.objective)
+        tuned_rows.append((held.name, res))
+        folds.append(run_baselines.run_all([held], gt, fd / "main", cfg, tuned=res["overrides"],
+                                           delta_ms=args.delta_ms, ablations=True,
+                                           obs_cache=cache))  # fmt: skip
+    pooled = pool_results(folds)
+    meta = {
+        "commit": git_commit(),
+        "sessions": [str(s) for s in sessions],
+        "cams": run_baselines.session_cams(sessions),
+        "per_cam": run_baselines.per_camera_default(cfg),
+        "delta_ms": args.delta_ms,
+        "tuned": "per fold (leave-one-session-out)",
+    }
+    pd = d / "pooled"
+    pd.mkdir(parents=True, exist_ok=True)
+    (pd / "results.json").write_text(json.dumps({"meta": meta, "results": pooled}, indent=2),
+                                     encoding="utf-8")  # fmt: skip
+    lines = run_baselines.render_md(meta, pooled)
+    lines[0] = f"<!-- generated by eval/run_c2.py --cv @ {git_commit()} -->"
+    lines.insert(1, "Leave-one-session-out: every number is on held-out sessions, pooled.")
+    (pd / "results.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    keys = sorted({k for _, r in tuned_rows for p in r["searched"] for k in r["searched"][p]})
+    tl = ["| Held out | Method | " + " | ".join(k.split(".")[-1] for k in keys) + " |",
+          "|---|---|" + "---|" * len(keys)]  # fmt: skip
+    for name, r in tuned_rows:
+        for p, ov in r["searched"].items():
+            tl.append(f"| {name} | {p} | " + " | ".join(
+                f"{ov[k]:g}" if k in ov else "" for k in keys) + " |")  # fmt: skip
+    (d / "tuned_per_fold.md").write_text("\n".join(tl) + "\n", encoding="utf-8")
+    log.info("\n%s", "\n".join(lines))
+    return pd / "results.md"
+
+
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else f"_(missing: {path})_\n"
 
@@ -200,11 +302,30 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--min-recall", type=float, default=0.9)
     ap.add_argument("--no-refit", action="store_true", help="skip calib (keep SH17/CHV fit)")
     ap.add_argument("--delta-ms", type=int, default=2000)
+    ap.add_argument("--cv", action="store_true", help="leave-one-session-out over split `cv:`")
+    ap.add_argument("--retune", action="store_true", help="--cv: redo folds already tuned")
+    ap.add_argument("--set", nargs="+", metavar="KEY=VALUE",
+                    help="--cv: fusion.yaml overrides fixed for every method and fold")
+    ap.add_argument("--space", choices=list(SPACES), default="default",
+                    help="--cv: tuning space (per_part = P with theta_neg per body part)")
+    ap.add_argument("--cv-refit", action="store_true",
+                    help="--cv: refit p calibration / v_learned on each fold's val sessions")
     args = ap.parse_args(argv)
     setup_logging()
-    split = load_split(Path(args.split))
     out, cfg = Path(args.out), Path(args.config)
     out.mkdir(parents=True, exist_ok=True)
+    if args.cv:
+        sp = yaml.safe_load(Path(args.split).read_text(encoding="utf-8"))
+        sessions = [Path(sp["jsonl_root"]) / s for s in sp["cv"]]
+        gt = Path(sp["gt_root"])
+        errs = check({"val": sessions[:-1], "test": sessions[-1:], "gt": gt}, cfg)
+        for e in errs:
+            log.error("check: %s", e)
+        if errs:
+            raise SystemExit(f"{len(errs)} problem(s); fix them before running the experiments")
+        log.info("-> %s", step_cv(sessions, gt, out, cfg, args))
+        return
+    split = load_split(Path(args.split))
     steps = [s for s in STEPS if s in args.steps and not (s == "calib" and args.no_refit)]
     val, test, gt = split["val"], split["test"], split["gt"]
     sv, st = [str(s) for s in val], [str(s) for s in test]

@@ -106,3 +106,19 @@ def test_baselines_use_detection_flag_not_calibrated_p():
 def test_explicit_primary_cam_overrides_config():
     p = make_policy("B1", load_config("fusion"), primary_cam="camX")
     assert p.update(0, [CamObs("camX", 0.05, 1.0, 0.9, detected=False)]) is CS.VIOLATION
+
+
+def test_per_part_theta_neg_overrides_shared_value_only_for_that_part():
+    import copy
+
+    from src.fusion.state_machine import StateParams
+
+    cfg = copy.deepcopy(load_config("fusion"))
+    cfg["evidence"]["theta_neg"] = -2.0
+    cfg["evidence"]["theta_neg_part"] = {"head": None, "torso": -0.3, "feet": None}
+    assert StateParams.from_config(cfg, "torso").theta_neg == -0.3
+    assert StateParams.from_config(cfg, "head").theta_neg == -2.0
+    assert StateParams.from_config(cfg).theta_neg == -2.0  # no part: shared value
+    assert StateParams.from_config(load_config("fusion"), "torso").theta_neg == load_config(
+        "fusion"
+    )["evidence"]["theta_neg"]  # config default (null) changes nothing

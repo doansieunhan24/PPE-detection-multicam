@@ -25,17 +25,17 @@ then its policy's entry, then its own name's entry (eval/tune_c2.py writes it).
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import math
 from pathlib import Path
 
 from eval.metrics import (
+    GidGT,
+    TrackGT,
     association_metrics,
     event_metrics,
     gt_for_cams,
     load_gt_csv,
-    majority_gid_to_gt,
     unknown_fraction,
 )
 from src.analytics_runner import git_commit, run
@@ -88,13 +88,8 @@ def _read_jsonl(path: Path, model):
         return [model.model_validate_json(ln) for ln in f if ln.strip()]
 
 
-def load_track_gt(tracks_csv: Path) -> dict[tuple[str, int], int]:
-    with open(tracks_csv, encoding="utf-8", newline="") as f:
-        return {
-            (r["cam_id"], int(r["track_id"])): int(r["gt_id"])
-            for r in csv.DictReader(f)
-            if r["gt_id"].strip()
-        }
+def load_track_gt(tracks_csv: Path) -> TrackGT:
+    return TrackGT.from_csv(tracks_csv)
 
 
 def _gid_rows(run_dir: Path):
@@ -104,14 +99,13 @@ def _gid_rows(run_dir: Path):
             yield d["ts_ms"], d["cam_id"], d["track_id"], d["global_id"]
 
 
-def gid_to_gt(run_dir: Path, tracks_csv: Path) -> dict[int, int]:
-    track_gt = load_track_gt(tracks_csv)
-    pairs = [
-        (gid, track_gt[(cam, tid)])
-        for _, cam, tid, gid in _gid_rows(run_dir)
-        if (cam, tid) in track_gt
-    ]
-    return majority_gid_to_gt(pairs)
+def gid_to_gt(run_dir: Path, tracks_csv: Path) -> GidGT:
+    run_json = run_dir / "run.json"
+    ov: dict = {}
+    if run_json.exists():
+        ov = json.loads(run_json.read_text(encoding="utf-8")).get("fusion_overrides", {})
+    stitched = ov.get("tracking.stitch_gap_ms") is not None
+    return GidGT(_gid_rows(run_dir), load_track_gt(tracks_csv), stitched=stitched)
 
 
 def evaluate(run_dir: Path, gt_dir: Path, delta_ms: int, association: bool = False) -> dict:
@@ -170,6 +164,7 @@ def _pool(rows: list[dict]) -> dict:
     dur = sum(r["duration_s"] for r in rows)
     out = _prf(tp, fp, fn, dur)
     out["n_gt"] = tp + fn
+    out["fp_duplicate"] = sum(r.get("fp_duplicate", 0) for r in rows)
     out["mean_ttd_s"] = _pool_ttd(rows)
     out["unknown_frac"] = sum(r["unknown_frac"] * r["duration_s"] for r in rows) / dur if dur else 0
     if all("per_type" in r for r in rows) and rows:
@@ -177,7 +172,8 @@ def _pool(rows: list[dict]) -> dict:
         for t in rows[0]["per_type"]:
             pr = [r["per_type"][t] for r in rows]
             d = _prf(*(sum(p[k] for p in pr) for k in ("tp", "fp", "fn")), dur)
-            out["per_type"][t] = {**d, "n_gt": d["tp"] + d["fn"], "mean_ttd_s": _pool_ttd(pr)}
+            out["per_type"][t] = {**d, "n_gt": d["tp"] + d["fn"], "mean_ttd_s": _pool_ttd(pr),
+                                  "fp_duplicate": sum(p.get("fp_duplicate", 0) for p in pr)}
     if all("association" in r for r in rows) and rows:
         a = [r["association"] for r in rows]
         tp_a, fp_a, fn_a = (sum(x[k] for x in a) for k in ("pair_tp", "pair_fp", "pair_fn"))
