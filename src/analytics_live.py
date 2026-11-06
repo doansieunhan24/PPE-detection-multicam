@@ -130,10 +130,20 @@ class TriggerClient:
         self.sock.close()
 
 
-def _write_atomic(path: Path, text: str) -> None:
+def _write_atomic(path: Path, text: str, retries: int = 5) -> bool:
+    """Replace path with text. On Windows the replace fails (PermissionError) while the
+    dashboard has the file open; retry briefly, then skip this snapshot (the next one follows
+    within a second) instead of stopping the live loop."""
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    for i in range(retries):
+        try:
+            os.replace(tmp, path)
+            return True
+        except PermissionError:
+            time.sleep(0.01 * (i + 1))
+    log.debug("skipped %s: file in use", path.name)
+    return False
 
 
 def _pct(xs: list[float]) -> dict:

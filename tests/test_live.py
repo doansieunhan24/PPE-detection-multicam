@@ -165,6 +165,41 @@ def test_snapshot_clip_offsets():
     assert clip_offset_ms(111_000, 100_000, 5, 10) == (5000, 111_000)  # previous one ended
 
 
+def test_states_snapshot_write_survives_file_in_use(tmp_path, monkeypatch):
+    import os
+
+    from src import analytics_live
+
+    calls = {"n": 0}
+    real = os.replace
+
+    def busy_then_ok(a, b):  # Windows: replace fails while the dashboard reads the file
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise PermissionError("in use")
+        return real(a, b)
+
+    monkeypatch.setattr(analytics_live.os, "replace", busy_then_ok)
+    p = tmp_path / "states_latest.json"
+    assert analytics_live._write_atomic(p, "[1]")
+    assert p.read_text() == "[1]"
+    def always_busy(a, b):
+        raise PermissionError("in use")
+
+    monkeypatch.setattr(analytics_live.os, "replace", always_busy)
+    assert analytics_live._write_atomic(p, "[2]") is False  # skipped, no exception
+    assert p.read_text() == "[1]"
+
+
+def test_snapshot_offset_counts_from_clip_end_when_head_is_short():
+    from src.alerts.snapshot import aligned_offset_ms
+
+    assert aligned_offset_ms(5000, 15_000, 15_000) == 5000  # full clip: unchanged
+    assert aligned_offset_ms(5000, 13_920, 15_000) == 3920  # keyframe late start (4 s GOP)
+    assert aligned_offset_ms(5000, 9_000, 15_000) == 0  # never before the clip start
+    assert aligned_offset_ms(5000, 13_920, None) == 5000  # no nominal span: unchanged
+
+
 def test_snapshot_from_clip_updates_store(tmp_path):
     import cv2
     import numpy as np

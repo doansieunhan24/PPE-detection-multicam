@@ -86,3 +86,15 @@ python -m src.analytics_live --replay data/rehearsal/wt3/jsonl --session data/de
 - Encoder `nvv4l2h264enc` trên dGPU không có `insert-sps-pps`: dùng `h264parse config-interval=-1`.
 - Smart record (`src/pipeline/smart_record.py`): chỉ với nguồn RTSP; `start-sr` cần con trỏ session id hợp lệ (truyền PyCapsule), `sr-done` đọc tên file bằng ctypes. Clip là stream gốc của camera (không có OSD), đổi tên thành `data/evidence/<alert_id>_<cam>.mp4`. Mỗi nguồn ghi 1 clip một lúc, alert đến trong lúc đang ghi dùng chung clip.
 - Ghép frame giữa các cam khi live: `src/common/time_sync.LiveSyncer` (cùng kết quả với `sync_groups` offline khi đủ frame, có test); tham số ở `configs/alerts.yaml` → `live`.
+
+## Demo trên dữ liệu C2 thật (2026-11-06)
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\demo_c2.ps1         # mở 4 cửa sổ + trình duyệt
+powershell -ExecutionPolicy Bypass -File tools\demo_c2.ps1 -Stop   # tắt hết
+```
+- `data/demo/c2/` (gitignored):
+  - `raw/cam{1,2,3}.mp4`: 4 take s01 nối liền (T04 bị che đủ PPE → T02 không mũ → T03 cầm mũ → T08 vào Z2), 419 s, phát lặp như 3 camera RTSP.
+  - `session/`: `cameras.yaml` (RTSP, calib thật cam1–3), `zones.yaml` của s01.
+  - `configs/`: bản sao `configs/` với ngưỡng P tune theo CV s01 (đa số fold: τ 1 s, θ_obs 0.25, θ_pos 0.25, θ_neg −2, T_alert 3 s) và **tắt té ngã** (`fall.score_threshold` 1.01): s01 không có té ngã; người đứng sát cam2, bị cắt chân, gây 1 FALL L3 sai trong lần chạy thử.
+- Chạy thử 150 s (DS 7.1, 3 luồng): khoảng 24 fps/cam, độ trễ alert median 88 ms, 4/4 snapshot.
+- Snapshot: clip smart record bắt đầu ở keyframe đầu tiên sau `trigger − pre_s` (Tiandy GOP 4 s, clip ngắn hơn 15 s), nên vị trí frame tính từ **cuối** clip (`snapshot.aligned_offset_ms`).

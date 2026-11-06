@@ -9,6 +9,7 @@
 - (s17) Kết quả CV refit: F1 B4 0.393 > B1 0.343 > P 0.255; báo sai không lặp P 1 / B4 14 / B1 20; TTD P 7.2 s; P tắt gile (0/6)
 - (s17) Thử θ_neg riêng theo bộ phận (`--space per_part`): **âm tính** (held-out F1 0.222, gile vẫn 0/6) → giữ θ_neg chung
 - (s17) Nối track trong cam (`tracking.stitch_gap_ms`, tắt mặc định): CV refit + nối 1.5 s → F1 P 0.333 ≈ B1 0.343 / B4 0.338, báo sai không lặp P 1 / 20 / 20; nối đúng người 0.907
+- (s17) Demo live trên C2: `tools/demo_c2.ps1` (dữ liệu `data/demo/c2/`), video + slide demo `eval/reports/c2_s01/bao_cao_tien_do_2026-11-06_demo.pptx`; snapshot tính vị trí từ cuối clip (GOP 4 s)
 - (s17) Báo cáo Claude Docs https://claude.ai/artifact/6Vbx6PvUKNWgqPQ7cYEDXT ; slide `eval/reports/c2_s01/bao_cao_tien_do_2026-11-06.pptx` (`tools/report/build_deck.py`)
 
 ## Đang dở

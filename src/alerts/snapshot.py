@@ -8,7 +8,9 @@ and the alert's evidence in the SQLite store is updated.
 Time of the alert inside the clip: a recording covers [trigger − pre_s, trigger + post_s]
 (smart_record.py, measured on DS 7.1); an alert that arrives while its camera is still
 recording shares that clip (EvidenceBook), so its offset is pre_s + (t_raise − t_trigger).
-Clips start on a keyframe, so the offset is accurate to about one GOP (1 s in the demo).
+Clips start on the first keyframe after trigger − pre_s but end on time, so when a clip is
+shorter than pre_s + post_s the offset is counted from its end (aligned_offset_ms; Tiandy
+GOP is 4 s, which put snapshots up to ~1 s late before this).
 """
 
 from __future__ import annotations
@@ -35,6 +37,7 @@ class _Job:
     frame: PerceptionFrame | None
     gid_of: dict[int, int]  # track_id → global_id for this camera
     deadline: float
+    span_ms: int | None = None  # nominal clip length (pre_s + post_s); None = no end alignment
 
 
 def clip_offset_ms(
@@ -69,6 +72,15 @@ def draw_overlay(img, frame: PerceptionFrame | None, gid_of: dict[int, int], a: 
     return img
 
 
+def aligned_offset_ms(offset_ms: int, clip_ms: float, span_ms: int | None) -> int:
+    """Offset counted from the clip end when the clip is shorter than pre_s + post_s: the
+    recording stops on time but starts on the first keyframe after trigger − pre_s, so a long
+    GOP (Tiandy: 4 s) shortens the head of the clip, not its tail."""
+    if span_ms is None or clip_ms <= 0 or clip_ms >= span_ms:
+        return offset_ms
+    return max(0, int(offset_ms - (span_ms - clip_ms)))
+
+
 def render_snapshot(job: _Job, out_jpg: Path) -> bool:
     import cv2
 
@@ -77,7 +89,7 @@ def render_snapshot(job: _Job, out_jpg: Path) -> bool:
         return False
     n = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0
     fps = cap.get(cv2.CAP_PROP_FPS) or 25
-    idx = int(job.offset_ms / 1000 * fps)
+    idx = int(aligned_offset_ms(job.offset_ms, n / fps * 1000, job.span_ms) / 1000 * fps)
     if n:
         idx = min(idx, int(n) - 1)
     cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, idx))
@@ -132,7 +144,8 @@ class SnapshotMaker:
         if self.frames.get(cam):
             frame, gids = min(self.frames[cam], key=lambda e: abs(e[0].ts_ms - a.t_raise_ms))
         self.q.put(_Job(a, cam, self.dir / clip_name, off, frame, gids,
-                        time.monotonic() + self.timeout_s))  # fmt: skip
+                        time.monotonic() + self.timeout_s,
+                        int((self.pre_s + self.post_s) * 1000)))  # fmt: skip
 
     def _ready(self, clip: Path) -> bool:
         """Clip exists and was not modified for settle_s (recording finished)."""

@@ -1151,6 +1151,40 @@ bullets(
 )
 footer(s, 13)
 
+# 13b live demo on C2 s01 (tools/demo_c2.ps1; recording of the DeepStream OSD stream) ---------
+DEMO = ROOT / "data" / "demo" / "c2"
+DEMO_MP4, DEMO_POSTER = DEMO / "rec" / "demo_c2_720p.mp4", DEMO / "rec" / "poster.jpg"
+_ls = DEMO / "run_test" / "results" / "live_stats.json"
+if DEMO_MP4.exists():
+    s = prs.slides.add_slide(BLANK)
+    title(s, "Demo: hệ thống chạy live trên video C2 thật",
+          "4 take s01 phát lại như 3 camera RTSP → DeepStream → analytics → cảnh báo")  # fmt: skip
+    mv = s.shapes.add_movie(str(DEMO_MP4), Inches(0.6), Inches(1.6), Inches(8.4), Inches(4.725),
+                            poster_frame_image=str(DEMO_POSTER), mime_type="video/mp4")  # fmt: skip
+    mv.name = "demo-video"
+    seg = [
+        ("0:00", "T04 · bị che, đủ PPE", "không cảnh báo (UNKNOWN khi bị che)"),
+        ("1:40", "T02 · B không đội mũ", "PPE_HELMET"),
+        ("3:20", "T03 · A tháo mũ cầm tay", "PPE_HELMET (mũ cầm tay không tính)"),
+        ("5:00", "T08 · A vào vùng cấm Z2", "INTRUSION"),
+    ]
+    for i, (t, what, out) in enumerate(seg):
+        y = 1.6 + i * 0.95
+        tb(s, 9.3, y, 0.8, 0.4, t, size=15, bold=True, color=ORANGE)
+        tb(s, 10.1, y, 2.9, 0.4, what, size=15, bold=True)
+        tb(s, 10.1, y + 0.38, 2.9, 0.5, out, size=13, color=MUTED)
+    if _ls.exists():
+        st = load(_ls)
+        n_cam, dur = 3, 150.0  # run_test: 3 cameras, analytics_live --duration-s 150
+        tb(s, 9.3, 5.5, 3.7, 0.9,
+           f"Chạy thử {dur:.0f} s: {st['frames'] / n_cam / dur:.1f} frame/s mỗi cam đến analytics; "
+           f"độ trễ cảnh báo median {st['alert_latency_ms']['median']:.0f} ms.",
+           size=12, color=MUTED)  # fmt: skip
+    tb(s, 0.6, 6.45, 12.2, 0.4,
+       "Ngưỡng P theo CV s01. Bản demo tắt té ngã (s01 không có té ngã; người bị cắt chân sát cam2 "
+       "gây một cảnh báo té ngã sai khi chạy thử).", size=12, color=MUTED)  # fmt: skip
+    footer(s, 0)
+
 # 14 limitations ----------------------------------------------------------------------------
 s = prs.slides.add_slide(BLANK)
 title(s, "Hạn chế cần nói rõ trong thuyết minh")
@@ -1177,7 +1211,7 @@ s = prs.slides.add_slide(BLANK)
 bg(s, INK)
 title(s, "Việc tiếp theo", dark=True)
 nx = [
-    ("Quay s02", "giày bảo hộ, đánh dấu Z2/Z3 trên sàn, T11 hỗn hợp; dùng làm session test"),
+    ("Quay s02", "gile cam / xanh nõn chuối cho cả 3 người, giày bảo hộ, băng keo Z2/Z3; session test"),
     ("Chốt ngưỡng", "θ_obs theo v·τ cho cấu hình một camera; kiểm lại trên s02"),
     ("Kiểm nhãn", "duyệt lại các dòng tự động trước khi báo số chính thức"),
     ("Viết thuyết minh", "bảng chính, ablation, độ nhạy, FPS, phân tích lỗi gile xanh"),
